@@ -3,6 +3,8 @@
 The class BranchReader is designed for parallel or sequential reading one data source by several consumers. It may be convenient while parsing, for example. One could use one branch per choice item.
 
 ## Examples
+
+### Sequential
     
     import net.leksi.io.BranchReader;
  
@@ -10,7 +12,7 @@ The class BranchReader is designed for parallel or sequential reading one data s
  
     try(
         FileReader fileReader = new FileReader(path);
-        BranchReader branchReader = new BranchReader(fileReader);
+        BranchReader branchReader = BranchReader.create(fileReader);
     ) {
         BranchReader curReader = branchReader;
      
@@ -25,7 +27,45 @@ The class BranchReader is designed for parallel or sequential reading one data s
             }
         }
     }
+    
+### Parallel
 
+    import net.leksi.io.BranchReader;
+ 
+    ...
+ 
+    try(
+        FileReader fileReader = new FileReader(path);
+        BranchReader branchReader = BranchReader.create(fileReader);
+    ) {
+        BranchReader curReader = branchReader;
+     
+        ...
+        
+        BranchReader[] readers = curReader.branch(Choice.sequences.size());
+        CountDownLatch cdl = new CountDownLatch(readers.length + 1);
+        CyclicBarrier barrier = new CyclicBarrier(readers.length, () -> cdl.countDown());
+        IntStream.range(0, readers.length).forEach(i -> {
+            final int pos = i;
+            new Thread(() -> {
+                try {
+                    if(!Choice.sequences.get(pos).test(readers[pos])) {
+                        readers[pos].close();
+                    }
+                    barrier.await();
+                    cdl.countDown();
+                } catch(Exception ex) {
+                ...
+                }
+            }).start();
+        });
+        cdl.await();
+        curReader.close();
+        curReader = Arrays.stream(readers).filter(r -> !r.isClosed()).findFirst().orElse(null);
+        ...
+    }
+    
+## Docs
 
 [javadoc](http://leksi.net/branch-reader/javadoc/)
 
