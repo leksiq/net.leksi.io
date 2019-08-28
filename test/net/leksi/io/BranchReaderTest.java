@@ -67,8 +67,8 @@ public class BranchReaderTest {
 
     StringBuilder text = new StringBuilder();       // Reference text data
     String resource = "1.txt";                      // Source text file
-    int initial_readers_count = 123;                // Initial branches number
-    int n_repeats = 100;                            // 
+    int initial_readers_count = 1230;                // Initial branches number
+    int n_repeats = 1000;                            // 
     Map<Integer, String> strings = Collections.synchronizedMap(new HashMap<>());
     List<Thread> threads = Collections.synchronizedList(new ArrayList<>());
 

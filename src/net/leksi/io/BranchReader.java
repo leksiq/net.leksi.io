@@ -1,5 +1,5 @@
 /*
- * BranchReader
+ * net.leksi.io.BranchReader
  * 
  * v.0.0.1
  * 
