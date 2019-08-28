@@ -67,7 +67,7 @@ The class BranchReader is designed for parallel or sequential reading one data s
     
 ## Docs
 
-[javadoc](http://leksi.net/branch-reader/javadoc/)
+<a href="http://leksi.net/branch-reader/javadoc/" target="_blank">javadoc</a>
 
 [coverage report](http://leksi.net/branch-reader/report/)
 
