@@ -122,7 +122,7 @@ abstract public class BranchReader extends Reader {
         /**
          * The flag indicating that the underlying {@code Reader} is fully read.
          */
-        private AtomicBoolean isSourceEnded = new AtomicBoolean(false);
+        private boolean isSourceEnded = false;
         /**
          * The list of all branches of the tree.
          */
@@ -196,22 +196,46 @@ abstract public class BranchReader extends Reader {
                     throw new IOException("Cannot read closed reader");
                 }
 
-                if(!isSourceEnded.get()) {
-                    if (position + len > getDataLength()) {
-                        /**
-                         * Should read from the underlying {@code Reader}.
-                         */
-                        readFromSource(position + len);
-                    }
-                }
-                if (isSourceEnded.get()) {
-                    /**
-                     * Correct requested amount if it is less than the 
-                     * rest data amount
-                     */
-                    res = (int)Math.min((long)len, endChunk.offset 
-                            + endChunk.length - position
+                if (position + len > endChunk.offset + endChunk.length) {
+                    synchronized(Root.this) {
+                        long dataLength = endChunk.offset + endChunk.length;
+                        if (position + len > dataLength && !isSourceEnded) {
+                            /**
+                             * Should read from the underlying
+                             * {@code Reader}.
+                             */
+                            int leftReadCount = (int) (position + len - dataLength);
+                            /**
+                             * Allocate new chunk and add it to list
+                             */
+                            endChunk.next = new ChunkHolder(leftReadCount);
+                            endChunk.next.offset = dataLength;
+                            endChunk = endChunk.next;
+
+                            while (leftReadCount > 0) {
+                                int n = source.read(endChunk.buffer,
+                                        endChunk.length,
+                                        Math.min(leftReadCount,
+                                                endChunk.buffer.length
+                                                - endChunk.length));
+                                if (n <= 0) {
+                                    isSourceEnded = true;
+                                    break;
+                                }
+                                endChunk.length += n;
+                                leftReadCount -= n;
+                            }
+                        }
+                        if (isSourceEnded) {
+                            /**
+                             * Correct requested amount if it is less than
+                             * the rest data amount
+                             */
+                            res = (int) Math.min((long) len, endChunk.offset
+                                    + endChunk.length - position
                             );
+                        }
+                    }
                 }
                 while (readCount < res) {
                     int from;
@@ -231,75 +255,16 @@ abstract public class BranchReader extends Reader {
 
             @Override
             public void close() throws IOException {
-                closeBranch(this);
-            }
-        }
-        
-        /**
-         * Returns the length of the data currently read from source.
-         * 
-         * @return the length of the data currently read from source
-         */
-        private synchronized long getDataLength() {
-            return endChunk.offset + endChunk.length;
-        }
-        
-        /**
-         * Reads lacking data from underlying {@code Reader} in case of expected
-         * position plus requested length is greate than actually read data
-         * length
-         * 
-         * @param postionAfterRead position plus requested length
-         * @throws IOException in case of I/O error while reading from the 
-         * underlying {@code Reader}.
-         */
-        private synchronized void readFromSource(final long postionAfterRead) 
-                throws IOException {
-            long dataLength = endChunk.offset + endChunk.length;
-            if (postionAfterRead > dataLength) {
-                /**
-                 * Should read from the underlying {@code Reader}.
-                 */
-                int leftReadCount = (int) (postionAfterRead - dataLength);
-                /**
-                 * Allocate new chunk and add it to list
-                 */
-                endChunk.next = new ChunkHolder(leftReadCount);
-                endChunk.next.offset = dataLength;
-                endChunk = endChunk.next;
-
-                while (leftReadCount > 0) {
-                    int n = source.read(endChunk.buffer,
-                            endChunk.length,
-                            Math.min(leftReadCount,
-                                    endChunk.buffer.length
-                                    - endChunk.length));
-                    if (n <= 0) {
-                        isSourceEnded.set(true);
-                        break;
+                synchronized (branches) {
+                    branches.remove(this);
+                    if (branches.isEmpty() && source != null) {
+                        source.close();
+                        source = null;
                     }
-                    endChunk.length += n;
-                    leftReadCount -= n;
                 }
             }
         }
         
-        /**
-         * Closes branch and the underlying {@code Reader} if all branches are 
-         * closed.
-         * 
-         * @param branch the branch to close
-         * @throws IOException in case of I/O error while closing the underlying 
-         * {@code Reader}.
-         */
-        private synchronized void closeBranch(final Branch branch) throws IOException {
-            branches.remove(branch);
-            if (branches.isEmpty() && source != null) {
-                source.close();
-                source = null;
-            }
-        }
-
         /**
          * Creates new {@code Root} object with an underlying {@code Reader}.
          * 
