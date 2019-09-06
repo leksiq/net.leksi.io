@@ -1,9 +1,9 @@
 /*
- * net.leksi.io.BranchReader
+ * net.leksi.io.BranchInputStream
  * 
  * v.0.0.1
  * 
- * 23-08-2019
+ * 28-08-2019
  *
  * The MIT License
  *
@@ -30,50 +30,67 @@
 package net.leksi.io;
 
 import java.io.IOException;
-import java.io.Reader;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * The class {@code BranchReader} is for different consumers to 
- * independently read the same {@code Reader}.
+ * The class {@code BranchInputStream} is for different consumers to 
+ * independently read the same {@code InputStream}.
  *
  * @author Alexey Zakharov &lt;leksi@leksi.net&gt;
  * @since JDK1.8
  */
-abstract public class BranchReader extends Reader {
+abstract public class BranchInputStream extends InputStream {
+    
+    static final private int DEFAULT_CHUNK_SIZE = 0x1000;
     
     /**
-     * Returns an array of {@code count} new branches {@code BranchReader}
+     * Returns an array of {@code count} new branches {@code BranchInputStream}
      * which can be read from the current position of the parent's 
-     * {@code BranchReader}.
+     * {@code BranchInputStream}.
      * 
      * @param count a number of new branches
      * @return an array of new branches
      * @throws IOException if it is closed
      */
-    abstract public BranchReader[] branch(final int count) throws IOException;
+    abstract public BranchInputStream[] branch(final int count) throws IOException;
     
     /**
      * Returns a boolean value meaning if the 
-     * {@code BranchReader} is closed.
+     * {@code BranchInputStream} is closed.
      * 
      * @return   a boolean value meaning if the 
-     *           {@code BranchReader} is closed
+     *           {@code BranchInputStream} is closed
      */
     abstract public boolean isClosed();
     
     /**
-     * A factory method for creation of an {@code BranchReader} object of 
+     * A factory method for creation of an {@code BranchInputStream} object of 
      * the concrete implementation based on the openned underlying
-     * {@code Reader}. The  reading is possible from the current position of the 
-     * {@code source}.
+     * {@code InputStream}. The  reading is possible from the current position 
+     * of the {@code source}.
      * 
-     * @param source the preliminary openned {@code Reader}
-     * @return root {@code BranchReader} object
+     * @param source the preliminary openned {@code InputStream}
+     * @param chunkSize defines size of byte chunk instead of default one.
+     * @return root {@code BranchInputStream} object
      */
-    static public BranchReader create(final Reader source) {
+    static public BranchInputStream create(final InputStream source, 
+            final int chunkSize) {
+        return new Root(source, chunkSize).root();
+    }
+    
+    /**
+     * A factory method for creation of an {@code BranchInputStream} object of 
+     * the concrete implementation based on the openned underlying
+     * {@code InputStream}. The  reading is possible from the current position 
+     * of the {@code source}.
+     * 
+     * @param source the preliminary openned {@code InputStream}
+     * @return root {@code BranchInputStream} object
+     */
+    static public BranchInputStream create(final InputStream source) {
         return new Root(source).root();
     }
     
@@ -93,7 +110,7 @@ abstract public class BranchReader extends Reader {
         /**
          * The {@code char} array to contain the data chunk.
          */
-        private char buffer[] = null;
+        private byte buffer[] = null;
         /**
          * The pointer to the next chunk.
          */
@@ -102,24 +119,29 @@ abstract public class BranchReader extends Reader {
 
         /**
          * Creates a chunk of predefined size.
-         * @param chunkSize size of memory in {@code char}s to allocate for the chunk.
+         * @param chunkSize size of memory in {@code char}s to allocate for the 
+         * chunk.
          */
         private Chunk(final int chunkSize) {
-            buffer = new char[chunkSize];
+            buffer = new byte[chunkSize];
         }
     }
 
     /**
      * The class {@code Root} is an infrastructure holder for the <i>tree</i> of 
-     * {@code BranchReader} objects.
+     * {@code BranchInputStream} objects.
      */
     private static class Root {
+        
+        private int chunkSize = DEFAULT_CHUNK_SIZE;
+    
         /**
-         * The underlying {@code Reader}.
+         * The underlying {@code InputStream}.
          */
-        private Reader source = null;
+        private InputStream source = null;
         /**
-         * The flag indicating that the underlying {@code Reader} is fully read.
+         * The flag indicating that the underlying {@code InputStream} is fully 
+         * read.
          */
         private boolean isSourceEnded = false;
         /**
@@ -129,25 +151,25 @@ abstract public class BranchReader extends Reader {
                 new ArrayList<>());
         /**
          * The last chunk at the singly linked list of data pieces read from the 
-         * underlying {@code Reader}.
+         * underlying {@code InputStream}.
          */
         private Chunk endChunk = new Chunk(0);
         /**
          * The class {@code Branch} is a concrete implementation of the abstract
-         * {@code BranchReader}.
+         * {@code BranchInputStream}.
          */
         
-        private class Branch extends BranchReader {
+        private class Branch extends BranchInputStream {
             /**
              * The current offset relative to the issue of the 
-             * underlying {@code Reader}.
+             * underlying {@code InputStream}.
              */
             private long position = 0;
             /**
              * The chunk currently being read.
              */
             private Chunk chunk = null;
-
+            
             /**
              * Creates a branch with a parent if it is given
              * 
@@ -165,13 +187,13 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public BranchReader[] branch(final int count) throws IOException {
-                BranchReader[] res;
+            public BranchInputStream[] branch(final int count) throws IOException {
+                BranchInputStream[] res;
                 
                 if (isClosed()) {
-                    throw new IOException("Cannot branch closed reader");
+                    throw new IOException("Cannot branch closed stream");
                 }
-                res = new BranchReader[count];
+                res = new BranchInputStream[count];
                 for (int i = 0; i < count; i++) {
                     res[i] = new Branch(this);
                     branches.add((Branch) res[i]);
@@ -185,35 +207,40 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public int read(final char[] cbuf, 
-                    final int off, final int len) throws IOException {
-                int res = -1;              // returned result
-                int readCount = 0;          // cumulative count of chars copied 
-                                            // from (probably) several chunks
+            public void close() throws IOException {
+                synchronized (branches) {
+                    chunk = null;
+                    branches.remove(this);
+                    if (branches.isEmpty() && source != null) {
+                        source = null;
+                    }
+                }
+            }
+
+            @Override
+            public int read() throws IOException {
+                int res  = -1;
                 
                 if(chunk != null) {
-                    if (position + len > endChunk.offset + endChunk.length) {
+                    if (position + 1 > endChunk.offset + endChunk.length) {
                         synchronized(Root.this) {
                             long dataLength = endChunk.offset + endChunk.length;
-                            if (position + len > dataLength && !isSourceEnded) {
+                            if (position + 1 > dataLength && !isSourceEnded) {
                                 /*
                                  * Should read from the underlying
-                                 * {@code Reader}.
+                                 * {@code InputSource}.
                                  */
-                                int leftReadCount = (int) (position + len - dataLength);
+                                int leftReadCount = (int) (chunkSize);
                                 /*
                                  * Allocate new chunk and add it to list
                                  */
-                                endChunk.next = new Chunk(leftReadCount);
+                                endChunk.next = new Chunk(chunkSize);
                                 endChunk.next.offset = dataLength;
                                 endChunk = endChunk.next;
 
                                 while (leftReadCount > 0) {
-                                    int n = source.read(endChunk.buffer,
-                                            endChunk.length,
-                                            Math.min(leftReadCount,
-                                                    endChunk.buffer.length
-                                                    - endChunk.length));
+                                    int n = source.read(endChunk.buffer, 0, 
+                                            leftReadCount);
                                     if (n <= 0) {
                                         isSourceEnded = true;
                                         break;
@@ -224,44 +251,36 @@ abstract public class BranchReader extends Reader {
                             }
                         }
                     }
-                    while (chunk != null && readCount < len) {
-                        int from;
-                        int n;
-                        if (position >= chunk.offset + chunk.length) {
-                            chunk = chunk.next;
-                        }
-                        if(chunk != null) {
-                            from = (int)(position - chunk.offset);
-                            n = Math.min(chunk.length - from, len - readCount);
-                            System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
-                            position += n;
-                            readCount += n;
-                        }
+                    if (position >= chunk.offset + chunk.length) {
+                        chunk = chunk.next;
                     }
-                    res = readCount;
+                    if(chunk != null) {
+                        res = chunk.buffer[(int)(position - chunk.offset)] & 
+                                0xFF;
+                        position++;
+                    }
                 }
                 return res;
             }
-
-            @Override
-            public void close() throws IOException {
-                synchronized (branches) {
-                    branches.remove(this);
-                    chunk = null;
-                    if (branches.isEmpty() && source != null) {
-                        source = null;
-                    }
-                }
-            }
-
         }
         
         /**
          * Creates new {@code Root} object with an underlying {@code Reader}.
          * 
          * @param source the underlying {@code Reader}.
+         * @param chunkSize defines size of byte chunk instead of default one.
          */
-        private Root(final Reader source) {
+        private Root(final InputStream source, final int chunkSize) {
+            this.chunkSize = chunkSize;
+            this.source = source;
+        }
+
+        /**
+         * Creates new {@code Root} object with an underlying {@code Reader}.
+         * 
+         * @param source the underlying {@code Reader}.
+         */
+        private Root(final InputStream source) {
             this.source = source;
         }
 

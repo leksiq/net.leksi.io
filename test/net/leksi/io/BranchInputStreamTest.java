@@ -1,4 +1,10 @@
 /*
+ * net.leksi.io.BranchInputStreamTest
+ * 
+ * v.0.0.1
+ * 
+ * 05-09-2019
+ *
  * The MIT License
  *
  * Copyright 2019 Alexey Zakharov <leksi@leksi.net>.
@@ -23,9 +29,9 @@
  */
 package net.leksi.io;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -34,10 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -45,62 +47,110 @@ import static org.junit.Assert.*;
  *
  * @author Alexey Zakharov &lt;leksi@leksi.net&gt;
  */
-public class BranchReaderTest {
+public class BranchInputStreamTest {
     
     /**
-     * Test of create method, of class BranchReader.
+     * Test of create method, of class BranchInputStream.
      * 
      * We allocate {@code initial_readers_count} Branches and start each in 
-     * a separate thread to read. When half of data read each odd branch give a
-     * branch, each even branch closes. After all we test 
-     * 1) if the total number of 
-     * branches equals to expected;
-     * 2) if the text read by each initial even branch 
-     * concatenated with text read by first branch after initial equals to 
-     * reference text;
-     * 3) if the text read by each initial odd branch 
-     * equals to reference text;
-     * 4) if the texts read by each branch after initials are equal.
-     * Also, to ensure the best code covarage, we test some branch closing 
-     * deals
+ a separate thread to read. When half of data read each odd branch give a
+ branch, each even branch closes. After all we test 
+ 1) if the total number of 
+ branches equals to expected;
+ 2) if the reference read by each initial even branch 
+ concatenated with reference read by first branch after initial equals to 
+ reference reference;
+ 3) if the reference read by each initial odd branch 
+ equals to reference reference;
+ 4) if the texts read by each branch after initials are equal.
+ Also, to ensure the best code covarage, we test some branch closing 
+ deals
      */
 
-    StringBuilder text = new StringBuilder();       // Reference text data
-    String resource = "1.zip";                      // Source text file
+    String resource = "1.zip";
     int initial_readers_count = 123;                // Initial branches number
     int n_repeats = 100;                            // 
-    Map<Integer, String> strings = Collections.synchronizedMap(new HashMap<>());
+    Map<Integer, byte[]> arrays = Collections.synchronizedMap(new HashMap<>());
     List<Thread> threads = Collections.synchronizedList(new ArrayList<>());
-
-    @Test
-    public void testCreate() throws Exception {
-        /**
-         * Read source file into refernce text
-         */
-        try(
-            Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource));
-        ) {
-            char buf[] = new char[0x1000];
-            int n = 0;
-            while((n = source.read(buf)) > 0) {
-                text.append(buf, 0, n);
+    int referenceLength;
+    
+    /**
+     * ID generator to separate odd and even threads/branches
+     */
+    AtomicInteger gen_id = new AtomicInteger(0);
+    
+    /**
+     * 
+     * @param a
+     * @param b
+     * @param c
+     * @return 
+     */
+    private boolean byteArraysEqual(final byte[] a, final byte[] b, final byte[] c) {
+        boolean res = true;
+        if(a.length != b.length + c.length) {
+            res = false;
+        } else {
+            for (int i = 0; i < Math.max(b.length, c.length); i++) {
+                if (i < b.length) {
+                    if(a[i] != b[i]) {
+                        res = false;
+                        break;
+                    }
+                }
+                if (i < c.length) {
+                    if(a[i + b.length] != c[i]) {
+                        res = false;
+                        break;
+                    }
+                }
             }
         }
+        return res;
+    }
+    
+    @Test
+    public void testCreate() throws Exception {
+        ByteArrayOutputStream referenceData = new ByteArrayOutputStream();
+        byte[] referenceArr;
+        byte[] empty = new byte[]{};
+        /**
+         * Read source file into refernce byte[]
+         */
+        try(
+            InputStream source = getClass().getClassLoader().
+                    getResourceAsStream(resource);
+        ) {
+            byte buf[] = new byte[0x1000];
+            int n;
+            while((n = source.read(buf)) > 0) {
+                referenceData.write(buf, 0, n);
+            }
+        }
+        referenceArr = referenceData.toByteArray();
+        referenceLength = referenceArr.length;
+        
         for(int i = 0; i < n_repeats; i++) {
             /**
              * Initialize environment
              */
-            strings.clear();
+            arrays.clear();
             threads.clear();
             gen_id.set(0);
             try(
-                Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource));
-                BranchReader result = BranchReader.create(source);
+                BranchInputStream result = (
+                        i % 2 == 0 ? 
+                        BranchInputStream.create(getClass().getClassLoader().
+                                getResourceAsStream(resource)) :
+                        BranchInputStream.create(getClass().getClassLoader().
+                                getResourceAsStream(resource), 
+                                (int)Math.ceil(0x800 * (1 + Math.random())))
+                    );
             ) {
                 /**
                  * Collect initial branches
                  */
-                ArrayList<BranchReader> list = new ArrayList<>();
+                ArrayList<BranchInputStream> list = new ArrayList<>();
                 list.add(result);
                 list.addAll(Arrays.stream(result.branch(initial_readers_count - 1)).collect(Collectors.toList()));
                 /**
@@ -125,48 +175,43 @@ public class BranchReaderTest {
                 /**
                  * Test 1)
                  */
-                assertEquals(initial_readers_count + initial_readers_count / 2, strings.size());
+                assertEquals(initial_readers_count + initial_readers_count / 2, arrays.size());
                 for(int k = 0; k < initial_readers_count; k++) {
                     if(k % 2 == 0) {
                         /**
                          * Test 2)
                          */
-                        assertEquals(text.toString(), strings.get(k) + strings.get(initial_readers_count));
+                        assertTrue(byteArraysEqual(referenceArr, arrays.get(k), arrays.get(initial_readers_count)));
                     } else {
                         /**
                          * Test 3)
                          */
-                        assertEquals(text.toString(), strings.get(k));
+                        assertTrue(byteArraysEqual(referenceArr, arrays.get(k), empty));
                     }
                 }
                 /**
                  * Test 4)
                  */
-                for(int k = initial_readers_count + 1; k < strings.size(); k++) {
-                    assertEquals(strings.get(initial_readers_count), strings.get(k));
+                for(int k = initial_readers_count + 1; k < arrays.size(); k++) {
+                    assertTrue(byteArraysEqual(arrays.get(initial_readers_count), arrays.get(k), empty));
                 }
             }
         }
     }
     
-    /**
-     * ID generator to separate odd and even threads/branches
-     */
-    AtomicInteger gen_id = new AtomicInteger(0);
-    
-    private Thread new_thread(BranchReader br) {
+    private Thread new_thread(BranchInputStream br) {
         int id = gen_id.getAndIncrement();
         Thread res = new Thread(() -> {
-            StringBuilder sb = new StringBuilder();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
             /**
              * temporary buffer of random size
              */
-            char buf[] = new char[(int)Math.ceil(0x800 * (1 + Math.random()))];
+            byte buf[] = new byte[(int)Math.ceil(0x800 * (1 + Math.random()))];
             int n = 0;
             /**
              * Rest length before half for initial branches
              */
-            int rest_len = id < initial_readers_count ? text.length() / 2 : -1;
+            int rest_len = id < initial_readers_count ? referenceLength / 2 : -1;
             try {
                 while(true) {
                     if(rest_len > 0 && rest_len < buf.length) {
@@ -178,12 +223,12 @@ public class BranchReaderTest {
                         /**
                          * Only odd and out of initial branches could come here
                          */
-                        assertTrue(id % 2 == 1 || id >= initial_readers_count);
-                        strings.put(id, sb.toString());
+                        assertTrue(String.valueOf(n), id % 2 == 1 || id >= initial_readers_count);
+                        arrays.put(id, baos.toByteArray());
                         br.close();
                         break;
                     }
-                    sb.append(buf, 0, n);
+                    baos.write(buf, 0, n);
                     rest_len -= n;
                     if(id < initial_readers_count && rest_len == 0) {
                         /**
@@ -195,7 +240,7 @@ public class BranchReaderTest {
                              * close even
                              */
                             br.close();
-                            strings.put(id, sb.toString());
+                            arrays.put(id, baos.toByteArray());
                             break;
                         } else {
                             /**
@@ -213,14 +258,7 @@ public class BranchReaderTest {
                  * test if the branch closed
                  */
                 assertTrue(br.isClosed());
-                try {
-                    br.read();
-                } catch(Exception ex1) {
-                    /**
-                     * can not read closed branch
-                     */
-                    assertTrue(ex1 instanceof IOException);
-                }
+                assertEquals(-1, br.read());
                 try {
                     br.branch(2314);
                 } catch(Exception ex1) {
