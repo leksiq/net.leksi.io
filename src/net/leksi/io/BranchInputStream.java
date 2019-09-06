@@ -67,6 +67,12 @@ abstract public class BranchInputStream extends InputStream {
     abstract public boolean isClosed();
     
     /**
+     * Returns array of not closed branches
+     * @return array of not closed branches
+     */
+    abstract public BranchInputStream[] getBranches();
+    
+    /**
      * A factory method for creation of an {@code BranchInputStream} object of 
      * the concrete implementation based on the openned underlying
      * {@code InputStream}. The  reading is possible from the current position 
@@ -261,6 +267,13 @@ abstract public class BranchInputStream extends InputStream {
                     }
                 }
                 return res;
+            }
+
+            @Override
+            public BranchInputStream[] getBranches() {
+                synchronized (branches) {
+                    return branches.stream().toArray(BranchInputStream[]::new);
+                }
             }
         }
         

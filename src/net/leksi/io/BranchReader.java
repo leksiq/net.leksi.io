@@ -65,6 +65,12 @@ abstract public class BranchReader extends Reader {
     abstract public boolean isClosed();
     
     /**
+     * Returns array of not closed branches
+     * @return array of not closed branches
+     */
+    abstract public BranchReader[] getBranches();
+    
+    /**
      * A factory method for creation of an {@code BranchReader} object of 
      * the concrete implementation based on the openned underlying
      * {@code Reader}. The  reading is possible from the current position of the 
@@ -251,6 +257,13 @@ abstract public class BranchReader extends Reader {
                     if (branches.isEmpty() && source != null) {
                         source = null;
                     }
+                }
+            }
+
+            @Override
+            public BranchReader[] getBranches() {
+                synchronized(branches) {
+                    return branches.stream().toArray(BranchReader[]::new);
                 }
             }
 
