@@ -1,6 +1,6 @@
-# BranchReader
+# BranchReader/BranchInputStream
 
-The class BranchReader is designed for parallel or sequential reading one data source by several consumers. It may be convenient while parsing, for example. One could use one branch per choice item.
+The classes BranchReader and BranchInputStream are designed for independent parallel or sequential reading one data source by several consumers. It may be convenient while parsing, for example. One could use one branch per choice item.
 
 ## Examples
 
