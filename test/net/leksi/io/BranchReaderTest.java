@@ -34,10 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -103,6 +99,7 @@ public class BranchReaderTest {
                 ArrayList<BranchReader> list = new ArrayList<>();
                 list.add(result);
                 list.addAll(Arrays.stream(result.branch(initial_readers_count - 1)).collect(Collectors.toList()));
+                assertEquals(initial_readers_count, result.getBranches().length);
                 /**
                  * Collect initial threads
                  */
@@ -122,6 +119,7 @@ public class BranchReaderTest {
                     }
                     threads.remove(0);
                 }
+                assertEquals(0, result.getBranches().length);
                 /**
                  * Test 1)
                  */

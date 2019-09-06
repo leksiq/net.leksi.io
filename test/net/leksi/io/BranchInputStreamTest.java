@@ -153,6 +153,7 @@ public class BranchInputStreamTest {
                 ArrayList<BranchInputStream> list = new ArrayList<>();
                 list.add(result);
                 list.addAll(Arrays.stream(result.branch(initial_readers_count - 1)).collect(Collectors.toList()));
+                assertEquals(initial_readers_count, result.getBranches().length);
                 /**
                  * Collect initial threads
                  */
@@ -172,6 +173,7 @@ public class BranchInputStreamTest {
                     }
                     threads.remove(0);
                 }
+                assertEquals(0, result.getBranches().length);
                 /**
                  * Test 1)
                  */
