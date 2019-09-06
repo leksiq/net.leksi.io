@@ -67,7 +67,7 @@ The classes BranchReader and BranchInputStream are designed for independent para
     
 ## Docs
 
-[javadoc](http://leksi.net/branch-reader/javadoc/)
+[javadoc](http://leksi.net/branch-input/javadoc/)
 
-[coverage report](http://leksi.net/branch-reader/report/)
+[coverage report](http://leksi.net/branch-input/report/)
 
