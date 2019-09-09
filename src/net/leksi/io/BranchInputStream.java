@@ -34,6 +34,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The class {@code BranchInputStream} is for different consumers to 
@@ -73,6 +74,12 @@ abstract public class BranchInputStream extends InputStream {
     abstract public BranchInputStream[] getBranches();
     
     /**
+     * Closes all branches except this
+     * @return boolean indicating the opertion was successful
+     */
+    abstract public boolean closeOthers();
+    
+    /**
      * A factory method for creation of an {@code BranchInputStream} object of 
      * the concrete implementation based on the openned underlying
      * {@code InputStream}. The  reading is possible from the current position 
@@ -102,7 +109,7 @@ abstract public class BranchInputStream extends InputStream {
     
     /**
      * The class {@code Chunk} is an auxiliary class to support a singly 
-     * linked list of data pieces read from the underlying {@code Reader}. 
+     * linked list of data pieces read from the underlying {@code InputStream}. 
      * <p>
      * In order to use memory sparingly we point the end chunk which is a point 
      * of grouth and every branch points its currently read chunk. Thus, chunks 
@@ -121,6 +128,9 @@ abstract public class BranchInputStream extends InputStream {
          * The pointer to the next chunk.
          */
         private Chunk next = null;
+        /**
+         * An offset of the chunk's starting position from the whole data's one.
+         */
         private long offset = 0;
 
         /**
@@ -153,8 +163,7 @@ abstract public class BranchInputStream extends InputStream {
         /**
          * The list of all branches of the tree.
          */
-        private final List<Branch> branches = Collections.synchronizedList(
-                new ArrayList<>());
+        private final ArrayList<Branch> branches = new ArrayList<>();
         /**
          * The last chunk at the singly linked list of data pieces read from the 
          * underlying {@code InputStream}.
@@ -176,6 +185,11 @@ abstract public class BranchInputStream extends InputStream {
              */
             private Chunk chunk = null;
             
+            /**
+             * Is the {@code Branch} closed.
+             */
+            private AtomicBoolean isClosed = new AtomicBoolean(false);
+
             /**
              * Creates a branch with a parent if it is given
              * 
@@ -209,13 +223,13 @@ abstract public class BranchInputStream extends InputStream {
 
             @Override
             public boolean isClosed() {
-                return chunk == null;
+                return isClosed.get();
             }
 
             @Override
-            public void close() throws IOException {
+            public void close() {
                 synchronized (branches) {
-                    chunk = null;
+                    isClosed.set(true);
                     branches.remove(this);
                     if (branches.isEmpty() && source != null) {
                         source = null;
@@ -227,7 +241,8 @@ abstract public class BranchInputStream extends InputStream {
             public int read() throws IOException {
                 int res  = -1;
                 
-                if(chunk != null) {
+                if(!isClosed.get()) {
+                    boolean canRead = true;
                     if (position + 1 > endChunk.offset + endChunk.length) {
                         synchronized(Root.this) {
                             long dataLength = endChunk.offset + endChunk.length;
@@ -257,12 +272,16 @@ abstract public class BranchInputStream extends InputStream {
                             }
                         }
                     }
+                    
                     if (position >= chunk.offset + chunk.length) {
-                        chunk = chunk.next;
+                        canRead = false;
+                        if(chunk.next != null) {
+                            canRead = true;
+                            chunk = chunk.next;
+                        }
                     }
-                    if(chunk != null) {
-                        res = chunk.buffer[(int)(position - chunk.offset)] & 
-                                0xFF;
+                    if(canRead) {
+                        res = chunk.buffer[(int)(position - chunk.offset)] & 0xFF;
                         position++;
                     }
                 }
@@ -275,12 +294,28 @@ abstract public class BranchInputStream extends InputStream {
                     return branches.stream().toArray(BranchInputStream[]::new);
                 }
             }
+
+            @Override
+            public boolean closeOthers() {
+                synchronized(branches) {
+                    if(isClosed()) {
+                        return false;
+                    }
+                    for(int i = branches.size() - 1; i >= 0; i--) {
+                        if(branches.get(i) != this) {
+                            branches.get(i).close();
+                        }
+                    }
+                }
+                return true;
+            }
+
         }
         
         /**
-         * Creates new {@code Root} object with an underlying {@code Reader}.
+         * Creates new {@code Root} object with an underlying {@code InputStream}.
          * 
-         * @param source the underlying {@code Reader}.
+         * @param source the underlying {@code InputStream}.
          * @param chunkSize defines size of byte chunk instead of default one.
          */
         private Root(final InputStream source, final int chunkSize) {
@@ -289,9 +324,9 @@ abstract public class BranchInputStream extends InputStream {
         }
 
         /**
-         * Creates new {@code Root} object with an underlying {@code Reader}.
+         * Creates new {@code Root} object with an underlying {@code InputStream}.
          * 
-         * @param source the underlying {@code Reader}.
+         * @param source the underlying {@code InputStream}.
          */
         private Root(final InputStream source) {
             this.source = source;

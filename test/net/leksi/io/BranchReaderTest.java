@@ -67,6 +67,7 @@ public class BranchReaderTest {
     int n_repeats = 100;                            // 
     Map<Integer, String> strings = Collections.synchronizedMap(new HashMap<>());
     List<Thread> threads = Collections.synchronizedList(new ArrayList<>());
+    int closedOthersId = -1;
 
     @Test
     public void testCreate() throws Exception {
@@ -82,10 +83,12 @@ public class BranchReaderTest {
                 text.append(buf, 0, n);
             }
         }
+        
         for(int i = 0; i < n_repeats; i++) {
             /**
              * Initialize environment
              */
+            int scenario = (i % 10 == 0 ? 1 : 0);
             strings.clear();
             threads.clear();
             gen_id.set(0);
@@ -103,7 +106,7 @@ public class BranchReaderTest {
                 /**
                  * Collect initial threads
                  */
-                Thread[] initial_threads = list.stream().map(br -> new_thread(br)).toArray(Thread[]::new);
+                Thread[] initial_threads = list.stream().map(br -> new_thread(br, scenario)).toArray(Thread[]::new);
                 /**
                  * Start initial threads
                  */
@@ -119,29 +122,34 @@ public class BranchReaderTest {
                     }
                     threads.remove(0);
                 }
-                assertEquals(0, result.getBranches().length);
-                /**
-                 * Test 1)
-                 */
-                assertEquals(initial_readers_count + initial_readers_count / 2, strings.size());
-                for(int k = 0; k < initial_readers_count; k++) {
-                    if(k % 2 == 0) {
-                        /**
-                         * Test 2)
-                         */
-                        assertEquals(text.toString(), strings.get(k) + strings.get(initial_readers_count));
-                    } else {
-                        /**
-                         * Test 3)
-                         */
-                        assertEquals(text.toString(), strings.get(k));
+                if(scenario == 0) {
+                    assertEquals(0, result.getBranches().length);
+                    /**
+                     * Test 1)
+                     */
+                    assertEquals(initial_readers_count + initial_readers_count / 2, strings.size());
+                    for(int k = 0; k < initial_readers_count; k++) {
+                        if(k % 2 == 0) {
+                            /**
+                             * Test 2)
+                             */
+                            assertEquals(text.toString(), strings.get(k) + strings.get(initial_readers_count));
+                        } else {
+                            /**
+                             * Test 3)
+                             */
+                            assertEquals(text.toString(), strings.get(k));
+                        }
                     }
-                }
-                /**
-                 * Test 4)
-                 */
-                for(int k = initial_readers_count + 1; k < strings.size(); k++) {
-                    assertEquals(strings.get(initial_readers_count), strings.get(k));
+                    /**
+                     * Test 4)
+                     */
+                    for(int k = initial_readers_count + 1; k < strings.size(); k++) {
+                        assertEquals(strings.get(initial_readers_count), strings.get(k));
+                    }
+                } else {
+                    assertEquals(1, result.getBranches().length);
+                    assertEquals(text.toString(), strings.get(closedOthersId));
                 }
             }
         }
@@ -152,7 +160,7 @@ public class BranchReaderTest {
      */
     AtomicInteger gen_id = new AtomicInteger(0);
     
-    private Thread new_thread(BranchReader br) {
+    private Thread new_thread(final BranchReader br, final int scenario) {
         int id = gen_id.getAndIncrement();
         Thread res = new Thread(() -> {
             StringBuilder sb = new StringBuilder();
@@ -164,8 +172,10 @@ public class BranchReaderTest {
             /**
              * Rest length before half for initial branches
              */
-            int rest_len = id < initial_readers_count ? text.length() / 2 : -1;
+            int rest_len = id < initial_readers_count || scenario == 1 ? text.length() / 2 : -1;
+            boolean closedOthers = false;
             try {
+                assertEquals(0, br.read(buf, 0, 0));
                 while(true) {
                     if(rest_len > 0 && rest_len < buf.length) {
                         n = br.read(buf, 0, rest_len);
@@ -176,30 +186,44 @@ public class BranchReaderTest {
                         /**
                          * Only odd and out of initial branches could come here
                          */
-                        assertTrue(id % 2 == 1 || id >= initial_readers_count);
+                        assertTrue(scenario == 1 || id % 2 == 1 || id >= initial_readers_count);
                         strings.put(id, sb.toString());
-                        br.close();
+                        if(scenario == 0) {
+                            br.close();
+                        }
                         break;
                     }
                     sb.append(buf, 0, n);
                     rest_len -= n;
-                    if(id < initial_readers_count && rest_len == 0) {
-                        /**
-                         * half of the way
-                         */
-                        rest_len = -1;
-                        if (id % 2 == 0) {
+                    if(scenario == 0) {
+                        if(id < initial_readers_count && rest_len == 0) {
                             /**
-                             * close even
+                             * half of the way
                              */
-                            br.close();
-                            strings.put(id, sb.toString());
-                            break;
-                        } else {
-                            /**
-                             * branch odd
-                             */
-                            new_thread(br.branch(1)[0]).start();
+                            rest_len = -1;
+                            if (id % 2 == 0) {
+                                /**
+                                 * close even
+                                 */
+                                br.close();
+                                strings.put(id, sb.toString());
+                                break;
+                            } else {
+                                /**
+                                 * branch odd
+                                 */
+                                new_thread(br.branch(1)[0], scenario).start();
+                            }
+                        }
+                    } else {
+                        if(rest_len == 0) {
+                            rest_len = -1;
+                            closedOthers = br.closeOthers();
+                            assertEquals(1, br.getBranches().length);
+                            if(closedOthers) {
+                                closedOthersId = id;
+                                assertEquals(br, br.getBranches()[0]);
+                            }
                         }
                     }
                     /**
@@ -210,22 +234,23 @@ public class BranchReaderTest {
                 /**
                  * test if the branch closed
                  */
-                assertTrue(br.isClosed());
-                try {
-                    br.read();
-                } catch(Exception ex1) {
-                    /**
-                     * can not read closed branch
-                     */
-                    assertTrue(ex1 instanceof IOException);
+                if(!closedOthers) {
+                    assertTrue(br.isClosed());
+                    assertFalse(br.closeOthers());
+                } else {
+                    assertTrue(!br.isClosed());
                 }
-                try {
-                    br.branch(2314);
-                } catch(Exception ex1) {
-                    /**
-                     * can not branch closed branch
-                     */
-                    assertTrue(ex1 instanceof IOException);
+                assertEquals(-1, br.read());
+                if(scenario == 0) {
+                    try {
+                        br.branch(2314);
+                        assertTrue(true);
+                    } catch(Exception ex1) {
+                        /**
+                         * can not branch closed branch
+                         */
+                        assertTrue(ex1 instanceof IOException);
+                    }
                 }
             } catch (Exception ex) {
                 fail(ex.getClass().getSimpleName() + ": " + ex.getMessage() + "\n    " + Arrays.stream(ex.getStackTrace()).map(e -> e.toString()).collect(Collectors.joining("\n    ")));

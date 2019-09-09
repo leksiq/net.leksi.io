@@ -1,10 +1,4 @@
 /*
- * net.leksi.io.BranchInputStreamTest
- * 
- * v.0.0.1
- * 
- * 05-09-2019
- *
  * The MIT License
  *
  * Copyright 2019 Alexey Zakharov <leksi@leksi.net>.
@@ -50,35 +44,31 @@ import static org.junit.Assert.*;
 public class BranchInputStreamTest {
     
     /**
-     * Test of create method, of class BranchInputStream.
+     * Test of create method, of class BranchReader.
      * 
      * We allocate {@code initial_readers_count} Branches and start each in 
- a separate thread to read. When half of data read each odd branch give a
- branch, each even branch closes. After all we test 
- 1) if the total number of 
- branches equals to expected;
- 2) if the reference read by each initial even branch 
- concatenated with reference read by first branch after initial equals to 
- reference reference;
- 3) if the reference read by each initial odd branch 
- equals to reference reference;
- 4) if the texts read by each branch after initials are equal.
- Also, to ensure the best code covarage, we test some branch closing 
- deals
+     * a separate thread to read. When half of data read each odd branch give a
+     * branch, each even branch closes. After all we test 
+     * 1) if the total number of 
+     * branches equals to expected;
+     * 2) if the text read by each initial even branch 
+     * concatenated with text read by first branch after initial equals to 
+     * reference text;
+     * 3) if the text read by each initial odd branch 
+     * equals to reference text;
+     * 4) if the texts read by each branch after initials are equal.
+     * Also, to ensure the best code covarage, we test some branch closing 
+     * deals
      */
 
-    String resource = "1.zip";
+    String resource = "1.zip";                      // Source text file
     int initial_readers_count = 123;                // Initial branches number
     int n_repeats = 100;                            // 
     Map<Integer, byte[]> arrays = Collections.synchronizedMap(new HashMap<>());
     List<Thread> threads = Collections.synchronizedList(new ArrayList<>());
+    int closedOthersId = -1;
     int referenceLength;
-    
-    /**
-     * ID generator to separate odd and even threads/branches
-     */
-    AtomicInteger gen_id = new AtomicInteger(0);
-    
+
     /**
      * 
      * @param a
@@ -86,7 +76,8 @@ public class BranchInputStreamTest {
      * @param c
      * @return 
      */
-    private boolean byteArraysEqual(final byte[] a, final byte[] b, final byte[] c) {
+    private boolean byteArraysEqual(final byte[] a, final byte[] b, 
+            final byte[] c) {
         boolean res = true;
         if(a.length != b.length + c.length) {
             res = false;
@@ -115,7 +106,7 @@ public class BranchInputStreamTest {
         byte[] referenceArr;
         byte[] empty = new byte[]{};
         /**
-         * Read source file into refernce byte[]
+         * Read source file into refernce text
          */
         try(
             InputStream source = getClass().getClassLoader().
@@ -134,30 +125,34 @@ public class BranchInputStreamTest {
             /**
              * Initialize environment
              */
+            int scenario = (i % 10 == 0 ? 1 : 0);
             arrays.clear();
             threads.clear();
             gen_id.set(0);
             try(
-                BranchInputStream result = (
-                        i % 2 == 0 ? 
-                        BranchInputStream.create(getClass().getClassLoader().
-                                getResourceAsStream(resource)) :
-                        BranchInputStream.create(getClass().getClassLoader().
-                                getResourceAsStream(resource), 
-                                (int)Math.ceil(0x800 * (1 + Math.random())))
-                    );
+                InputStream source = getClass().getClassLoader().
+                        getResourceAsStream(resource);
+                BranchInputStream result = (i % 3 == 2 ? 
+                        BranchInputStream.create(source, 
+                                (int)Math.ceil(0x1000 * (1 + Math.random()))) : 
+                        BranchInputStream.create(source));
             ) {
                 /**
                  * Collect initial branches
                  */
                 ArrayList<BranchInputStream> list = new ArrayList<>();
                 list.add(result);
-                list.addAll(Arrays.stream(result.branch(initial_readers_count - 1)).collect(Collectors.toList()));
-                assertEquals(initial_readers_count, result.getBranches().length);
+                list.addAll(Arrays.stream(result.
+                        branch(initial_readers_count - 1)).
+                        collect(Collectors.toList()));
+                assertEquals(initial_readers_count, 
+                        result.getBranches().length);
                 /**
                  * Collect initial threads
                  */
-                Thread[] initial_threads = list.stream().map(br -> new_thread(br)).toArray(Thread[]::new);
+                Thread[] initial_threads = list.stream().
+                        map(br -> new_thread(br, scenario)).
+                        toArray(Thread[]::new);
                 /**
                  * Start initial threads
                  */
@@ -173,35 +168,54 @@ public class BranchInputStreamTest {
                     }
                     threads.remove(0);
                 }
-                assertEquals(0, result.getBranches().length);
-                /**
-                 * Test 1)
-                 */
-                assertEquals(initial_readers_count + initial_readers_count / 2, arrays.size());
-                for(int k = 0; k < initial_readers_count; k++) {
-                    if(k % 2 == 0) {
-                        /**
-                         * Test 2)
-                         */
-                        assertTrue(byteArraysEqual(referenceArr, arrays.get(k), arrays.get(initial_readers_count)));
-                    } else {
-                        /**
-                         * Test 3)
-                         */
-                        assertTrue(byteArraysEqual(referenceArr, arrays.get(k), empty));
+                if(scenario == 0) {
+                    assertEquals(0, result.getBranches().length);
+                    /**
+                     * Test 1)
+                     */
+                    assertEquals(
+                            initial_readers_count + initial_readers_count / 2, 
+                            arrays.size());
+                    for(int k = 0; k < initial_readers_count; k++) {
+                        if(k % 2 == 0) {
+                            /**
+                             * Test 2)
+                             */
+                            assertTrue(byteArraysEqual(referenceArr, 
+                                    arrays.get(k), 
+                                    arrays.get(initial_readers_count)));
+                        } else {
+                            /**
+                             * Test 3)
+                             */
+                            assertTrue(byteArraysEqual(referenceArr, 
+                                    arrays.get(k), empty));
+                        }
                     }
-                }
-                /**
-                 * Test 4)
-                 */
-                for(int k = initial_readers_count + 1; k < arrays.size(); k++) {
-                    assertTrue(byteArraysEqual(arrays.get(initial_readers_count), arrays.get(k), empty));
+                    /**
+                     * Test 4)
+                     */
+                    for(int k = initial_readers_count + 1; k < arrays.size(); 
+                            k++) {
+                        assertTrue(byteArraysEqual(arrays.
+                                get(initial_readers_count), arrays.get(k), 
+                                empty));
+                    }
+                } else {
+                    assertEquals(1, result.getBranches().length);
+                    assertTrue(byteArraysEqual(referenceArr, 
+                            arrays.get(closedOthersId), empty));
                 }
             }
         }
     }
     
-    private Thread new_thread(BranchInputStream br) {
+    /**
+     * ID generator to separate odd and even threads/branches
+     */
+    AtomicInteger gen_id = new AtomicInteger(0);
+    
+    private Thread new_thread(final BranchInputStream br, final int scenario) {
         int id = gen_id.getAndIncrement();
         Thread res = new Thread(() -> {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -213,7 +227,9 @@ public class BranchInputStreamTest {
             /**
              * Rest length before half for initial branches
              */
-            int rest_len = id < initial_readers_count ? referenceLength / 2 : -1;
+            int rest_len = id < initial_readers_count || scenario == 1 ? 
+                    referenceLength / 2 : -1;
+            boolean closedOthers = false;
             try {
                 while(true) {
                     if(rest_len > 0 && rest_len < buf.length) {
@@ -225,30 +241,45 @@ public class BranchInputStreamTest {
                         /**
                          * Only odd and out of initial branches could come here
                          */
-                        assertTrue(String.valueOf(n), id % 2 == 1 || id >= initial_readers_count);
+                        assertTrue(scenario == 1 || id % 2 == 1 || 
+                                id >= initial_readers_count);
                         arrays.put(id, baos.toByteArray());
-                        br.close();
+                        if(scenario == 0) {
+                            br.close();
+                        }
                         break;
                     }
                     baos.write(buf, 0, n);
                     rest_len -= n;
-                    if(id < initial_readers_count && rest_len == 0) {
-                        /**
-                         * half of the way
-                         */
-                        rest_len = -1;
-                        if (id % 2 == 0) {
+                    if(scenario == 0) {
+                        if(id < initial_readers_count && rest_len == 0) {
                             /**
-                             * close even
+                             * half of the way
                              */
-                            br.close();
-                            arrays.put(id, baos.toByteArray());
-                            break;
-                        } else {
-                            /**
-                             * branch odd
-                             */
-                            new_thread(br.branch(1)[0]).start();
+                            rest_len = -1;
+                            if (id % 2 == 0) {
+                                /**
+                                 * close even
+                                 */
+                                br.close();
+                                arrays.put(id, baos.toByteArray());
+                                break;
+                            } else {
+                                /**
+                                 * branch odd
+                                 */
+                                new_thread(br.branch(1)[0], scenario).start();
+                            }
+                        }
+                    } else {
+                        if(rest_len == 0) {
+                            rest_len = -1;
+                            closedOthers = br.closeOthers();
+                            assertEquals(1, br.getBranches().length);
+                            if(closedOthers) {
+                                closedOthersId = id;
+                                assertEquals(br, br.getBranches()[0]);
+                            }
                         }
                     }
                     /**
@@ -259,18 +290,29 @@ public class BranchInputStreamTest {
                 /**
                  * test if the branch closed
                  */
-                assertTrue(br.isClosed());
+                if(!closedOthers) {
+                    assertTrue(br.isClosed());
+                    assertFalse(br.closeOthers());
+                } else {
+                    assertTrue(!br.isClosed());
+                }
                 assertEquals(-1, br.read());
-                try {
-                    br.branch(2314);
-                } catch(Exception ex1) {
-                    /**
-                     * can not branch closed branch
-                     */
-                    assertTrue(ex1 instanceof IOException);
+                if(scenario == 0) {
+                    try {
+                        br.branch(2314);
+                        assertTrue(true);
+                    } catch(Exception ex1) {
+                        /**
+                         * can not branch closed branch
+                         */
+                        assertTrue(ex1 instanceof IOException);
+                    }
                 }
             } catch (Exception ex) {
-                fail(ex.getClass().getSimpleName() + ": " + ex.getMessage() + "\n    " + Arrays.stream(ex.getStackTrace()).map(e -> e.toString()).collect(Collectors.joining("\n    ")));
+                fail(ex.getClass().getSimpleName() + ": " + ex.getMessage() + 
+                        "\n    " + Arrays.stream(ex.getStackTrace()).
+                                map(e -> e.toString()).
+                                collect(Collectors.joining("\n    ")));
             }
         });
         threads.add(res);
