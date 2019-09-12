@@ -32,9 +32,9 @@ package net.leksi.io;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The class {@code BranchReader} is for different consumers to 
@@ -142,7 +142,7 @@ abstract public class BranchReader extends Reader {
         /**
          * The list of all branches of the tree.
          */
-        private final ArrayList<Branch> branches = new ArrayList<>();
+        private final HashMap<Long, Branch> branches = new HashMap<>();
         /**
          * The last chunk at the singly linked list of data pieces read from the 
          * underlying {@code Reader}.
@@ -152,6 +152,10 @@ abstract public class BranchReader extends Reader {
          * The class {@code Branch} is a concrete implementation of the abstract
          * {@code BranchReader}.
          */
+        /**
+         * Generates ids for branches 
+         */
+        private AtomicLong idGenerator = new AtomicLong(0);
         
         private class Branch extends BranchReader {
             /**
@@ -167,6 +171,10 @@ abstract public class BranchReader extends Reader {
              * Is the {@code Branch} closed.
              */
             private AtomicBoolean isClosed = new AtomicBoolean(false);
+            /**
+             * {@code Branch}'s id to distinguish thorously
+             */
+            private long id = idGenerator.incrementAndGet();
 
             /**
              * Creates a branch with a parent if it is given
@@ -186,7 +194,7 @@ abstract public class BranchReader extends Reader {
 
             @Override
             public BranchReader[] branch(final int count) throws IOException {
-                synchronized(branches) {
+                synchronized(Root.this) {
                     BranchReader[] res;
 
                     if (isClosed()) {
@@ -195,7 +203,7 @@ abstract public class BranchReader extends Reader {
                     res = new BranchReader[count];
                     for (int i = 0; i < count; i++) {
                         res[i] = new Branch(this);
-                        branches.add((Branch) res[i]);
+                        branches.put(((Branch) res[i]).id, (Branch) res[i]);
                     }
                     return res;
                 }
@@ -212,8 +220,12 @@ abstract public class BranchReader extends Reader {
                 int res = -1;              // returned result
                 int readCount = 0;          // cumulative count of chars copied 
                                             // from (probably) several chunks
+                                            
                 if(!isClosed.get()) {
                     boolean canRead = true;
+                    if(len == 0) {
+                        return 0;
+                    }
                     if (position + len > endChunk.offset + endChunk.length) {
                         synchronized(Root.this) {
                             long dataLength = endChunk.offset + endChunk.length;
@@ -266,15 +278,15 @@ abstract public class BranchReader extends Reader {
                             break;
                         }
                     }
-                    res = (readCount > 0 || len == 0 ? readCount : -1);
+                    res = (readCount > 0 ? readCount : -1);
                 }
                 return res;
             }
 
             @Override
             public void close() {
-                synchronized (branches) {
-                    branches.remove(this);
+                synchronized (Root.this) {
+                    branches.remove(id);
                     isClosed.set(true);
                     if (branches.isEmpty() && source != null) {
                         source = null;
@@ -284,21 +296,28 @@ abstract public class BranchReader extends Reader {
 
             @Override
             public BranchReader[] getBranches() {
-                synchronized(branches) {
-                    return branches.stream().toArray(BranchReader[]::new);
+                synchronized(Root.this) {
+                    if(branches.isEmpty()) {
+                        return new BranchReader[]{};
+                    }
+                    return branches.values().stream().toArray(BranchReader[]::new);
                 }
             }
 
             @Override
             public boolean closeOthers() {
-                synchronized(branches) {
+                synchronized(Root.this) {
                     if(isClosed()) {
                         return false;
                     }
-                    for(int i = branches.size() - 1; i >= 0; i--) {
-                        if(branches.get(i) != this) {
-                            branches.get(i).close();
+                    ArrayList<Branch> toClose = new ArrayList<>();
+                    for(long key: branches.keySet()) {
+                        if(key != id) {
+                            toClose.add(branches.get(key));
                         }
+                    }
+                    for(Branch branch: toClose) {
+                        branch.close();
                     }
                 }
                 return true;
@@ -323,7 +342,7 @@ abstract public class BranchReader extends Reader {
         private Branch root() {
             Branch root = new Branch(null);
             root.chunk = endChunk;
-            branches.add(root);
+            branches.put(root.id, root);
             return root;
         }
     }

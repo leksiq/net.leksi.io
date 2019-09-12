@@ -101,6 +101,7 @@ public class BranchInputStreamTest {
     }
     
     @Test
+//    public void testCreate1() throws Exception {}
     public void testCreate() throws Exception {
         ByteArrayOutputStream referenceData = new ByteArrayOutputStream();
         byte[] referenceArr;
@@ -122,6 +123,7 @@ public class BranchInputStreamTest {
         referenceLength = referenceArr.length;
         
         for(int i = 0; i < n_repeats; i++) {
+//            System.err.println("repeat: " + i);
             /**
              * Initialize environment
              */
@@ -169,13 +171,14 @@ public class BranchInputStreamTest {
                     threads.remove(0);
                 }
                 if(scenario == 0) {
-                    assertEquals(0, result.getBranches().length);
+                    assertEquals(String.valueOf(i), 0, result.getBranches().length);
                     /**
                      * Test 1)
                      */
                     assertEquals(
                             initial_readers_count + initial_readers_count / 2, 
                             arrays.size());
+
                     for(int k = 0; k < initial_readers_count; k++) {
                         if(k % 2 == 0) {
                             /**
@@ -300,7 +303,7 @@ public class BranchInputStreamTest {
                 if(scenario == 0) {
                     try {
                         br.branch(2314);
-                        assertTrue(true);
+                        assertTrue(false);
                     } catch(Exception ex1) {
                         /**
                          * can not branch closed branch

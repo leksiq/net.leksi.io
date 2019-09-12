@@ -32,9 +32,10 @@ package net.leksi.io;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import jdk.nashorn.internal.ir.Symbol;
 
 /**
  * The class {@code BranchInputStream} is for different consumers to 
@@ -163,17 +164,21 @@ abstract public class BranchInputStream extends InputStream {
         /**
          * The list of all branches of the tree.
          */
-        private final ArrayList<Branch> branches = new ArrayList<>();
+        private final HashMap<Long, Branch> branches = new HashMap<>();
         /**
          * The last chunk at the singly linked list of data pieces read from the 
          * underlying {@code InputStream}.
          */
         private Chunk endChunk = new Chunk(0);
         /**
+         * Generates ids for branches 
+         */
+        private AtomicLong idGenerator = new AtomicLong(0);
+        
+        /**
          * The class {@code Branch} is a concrete implementation of the abstract
          * {@code BranchInputStream}.
          */
-        
         private class Branch extends BranchInputStream {
             /**
              * The current offset relative to the issue of the 
@@ -184,11 +189,14 @@ abstract public class BranchInputStream extends InputStream {
              * The chunk currently being read.
              */
             private Chunk chunk = null;
-            
             /**
              * Is the {@code Branch} closed.
              */
             private AtomicBoolean isClosed = new AtomicBoolean(false);
+            /**
+             * {@code Branch}'s id to distinguish thorously
+             */
+            private long id = idGenerator.incrementAndGet();
 
             /**
              * Creates a branch with a parent if it is given
@@ -208,17 +216,19 @@ abstract public class BranchInputStream extends InputStream {
 
             @Override
             public BranchInputStream[] branch(final int count) throws IOException {
-                BranchInputStream[] res;
-                
-                if (isClosed()) {
-                    throw new IOException("Cannot branch closed stream");
+                synchronized(Root.this) {
+                    BranchInputStream[] res;
+
+                    if (isClosed()) {
+                        throw new IOException("Cannot branch closed stream");
+                    }
+                    res = new BranchInputStream[count];
+                    for (int i = 0; i < count; i++) {
+                        res[i] = new Branch(this);
+                        branches.put(((Branch) res[i]).id, (Branch) res[i]);
+                    }
+                    return res;
                 }
-                res = new BranchInputStream[count];
-                for (int i = 0; i < count; i++) {
-                    res[i] = new Branch(this);
-                    branches.add((Branch) res[i]);
-                }
-                return res;
             }
 
             @Override
@@ -228,9 +238,9 @@ abstract public class BranchInputStream extends InputStream {
 
             @Override
             public void close() {
-                synchronized (branches) {
+                synchronized (Root.this) {
                     isClosed.set(true);
-                    branches.remove(this);
+                    branches.remove(id);
                     if (branches.isEmpty() && source != null) {
                         source = null;
                     }
@@ -290,21 +300,28 @@ abstract public class BranchInputStream extends InputStream {
 
             @Override
             public BranchInputStream[] getBranches() {
-                synchronized (branches) {
-                    return branches.stream().toArray(BranchInputStream[]::new);
+                synchronized (Root.this) {
+                    if(branches.isEmpty()) {
+                        return new BranchInputStream[]{};
+                    }
+                    return branches.values().stream().toArray(BranchInputStream[]::new);
                 }
             }
 
             @Override
             public boolean closeOthers() {
-                synchronized(branches) {
+                synchronized(Root.this) {
                     if(isClosed()) {
                         return false;
                     }
-                    for(int i = branches.size() - 1; i >= 0; i--) {
-                        if(branches.get(i) != this) {
-                            branches.get(i).close();
+                    ArrayList<Branch> toClose = new ArrayList<>();
+                    for(long key: branches.keySet()) {
+                        if(key != id) {
+                            toClose.add(branches.get(key));
                         }
+                    }
+                    for(Branch branch: toClose) {
+                        branch.close();
                     }
                 }
                 return true;
@@ -340,7 +357,7 @@ abstract public class BranchInputStream extends InputStream {
         private Branch root() {
             Branch root = new Branch(null);
             root.chunk = endChunk;
-            branches.add(root);
+            branches.put(root.id, root);
             return root;
         }
     }
