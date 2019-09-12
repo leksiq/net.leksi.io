@@ -65,9 +65,13 @@ The classes BranchReader and BranchInputStream are designed for independent para
         ...
     }
     
-## Docs
+# UTF7InputSource
 
-[javadoc](http://leksi.net/branch-input/javadoc/)
+An instance of this class reads UTF-7 encoded data and gives it on UTF-16BE encoding.
+    
+# Docs
 
-[coverage report](http://leksi.net/branch-input/report/)
+[javadoc](http://leksi.net/net.leksi.io/javadoc/)
+
+[coverage report](http://leksi.net/net.leksi.io/jacoco/)
 
