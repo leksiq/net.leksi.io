@@ -68,6 +68,24 @@ The classes BranchReader and BranchInputStream are designed for independent para
 # UTF7InputSource
 
 An instance of this class reads UTF-7 encoded data and gives it on UTF-16BE encoding.
+
+# BOM
+Tests BOM (Byte Order Mark) of data from *BranchInputSource* and 
+returns the charset name. The *BranchInputSource* after that has BOM 
+skipped (except the case UTF-7, when the BOM should be decoded first)
+
+## Examples
+    ...
+    try(BranchInputStream stream = BranchInputStream.create(inputStream);) {
+        String charsetName = BOM.test(stream);
+        BranchInputStream bis = stream.getBranches()[0];
+        try(BranchReader reader = BranchReader.create(charsetName != null ? 
+                new InputStreamReader(bis, charsetName) :
+                new InputStreamReader(bis)
+                )) {
+        ...
+        }
+    }
     
 # Docs
 
