@@ -67,7 +67,7 @@ The classes BranchReader and BranchInputStream are designed for independent para
     
 # UTF7InputSource
 
-An instance of this class reads UTF-7 encoded data and gives it on UTF-16BE encoding.
+An instance of this class reads UTF-7 encoded data and gives it on UTF-16BE encoding. The BOM (Byte Order Mark) is skipped if present.
 
 # BOM
 Tests BOM (Byte Order Mark) of data from *BranchInputSource* and 
