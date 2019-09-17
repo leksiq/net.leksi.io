@@ -35,7 +35,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import jdk.nashorn.internal.ir.Symbol;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * The class {@code BranchInputStream} is for different consumers to 
@@ -237,11 +238,12 @@ abstract public class BranchInputStream extends InputStream {
             }
 
             @Override
-            public void close() {
+            public void close() throws IOException {
                 synchronized (Root.this) {
                     isClosed.set(true);
                     branches.remove(id);
                     if (branches.isEmpty() && source != null) {
+                        source.close();
                         source = null;
                     }
                 }
@@ -321,7 +323,12 @@ abstract public class BranchInputStream extends InputStream {
                         }
                     }
                     for(Branch branch: toClose) {
-                        branch.close();
+                        try {
+                            branch.close();
+                        } catch (IOException ex) {
+                            // Not reacheable as underlying source never
+                            // close here
+                        }
                     }
                 }
                 return true;

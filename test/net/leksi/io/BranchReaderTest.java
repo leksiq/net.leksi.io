@@ -24,8 +24,10 @@
 package net.leksi.io;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -34,8 +36,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import org.junit.Before;
+import org.junit.BeforeClass;
 
 /**
  *
@@ -62,16 +68,33 @@ public class BranchReaderTest {
      */
 
     StringBuilder text = new StringBuilder();       // Reference text data
-    String resource = "1.zip";                      // Source text file
+    String resource = "1.txt";                      // Source text file
     int initial_readers_count = 123;                // Initial branches number
     int n_repeats = 100;                            // 
     Map<Integer, String> strings = Collections.synchronizedMap(new HashMap<>());
     List<Thread> threads = Collections.synchronizedList(new ArrayList<>());
     int closedOthersId = -1;
 
+    @BeforeClass
+    public static void setUpClass() throws Exception {
+    }
+
+    @AfterClass
+    public static void tearDownClass() throws Exception {
+    }
+
+    @Before
+    public void setUp() throws Exception {
+    }
+
+    @After
+    public void tearDown() throws Exception {
+    }
+
     @Test
 //    public void testCreate1() throws Exception {}
     public void testCreate() throws Exception {
+        System.out.println("testCreate");
         /**
          * Read source file into refernce text
          */
@@ -176,7 +199,9 @@ public class BranchReaderTest {
             int rest_len = id < initial_readers_count || scenario == 1 ? text.length() / 2 : -1;
             boolean closedOthers = false;
             try {
-                assertEquals(0, br.read(buf, 0, 0));
+                if(scenario != 1 && !br.isClosed()) {
+                    assertEquals(0, br.read(buf, 0, 0));
+                }
                 while(true) {
                     if(rest_len > 0 && rest_len < buf.length) {
                         n = br.read(buf, 0, rest_len);
@@ -260,6 +285,136 @@ public class BranchReaderTest {
         threads.add(res);
         return res;
     }
-    
-    
+
+    /**
+     * Test of create method, of class BranchReader.
+     */
+    @Test
+    public void testCreate_InputStream_1arg_UTF7() throws Exception {
+        System.out.println("testCreate_InputStream_1arg_UTF7");
+        StringBuilder expectedText = new StringBuilder();
+        StringBuilder resultText = new StringBuilder();
+
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-8.txt");) {
+            //skip BOM
+            is.read();
+            is.read();
+            is.read();
+            try (Reader source = new InputStreamReader(is, Charset.forName("UTF-8"));) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = source.read(buffer)) >= 0) {
+                    expectedText.append(buffer, 0, n);
+                }
+            }
+        }
+        try (BranchReader reader = BranchReader.create(getClass().getClassLoader().getResourceAsStream("2-utf-7.txt"));) {
+            char[] buffer = new char[0x1000];
+            int n;
+            while ((n = reader.read(buffer)) >= 0) {
+                resultText.append(buffer, 0, n);
+            }
+        }
+        assertEquals(expectedText.toString(), resultText.toString());
+    }
+
+    /**
+     * Test of create method, of class BranchReader.
+     */
+    @Test
+    public void testCreate_InputStream_1arg_UTF8() throws Exception {
+        System.out.println("testCreate_InputStream_1arg_UTF8");
+        StringBuilder expectedText = new StringBuilder();
+        StringBuilder resultText = new StringBuilder();
+
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-8.txt");) {
+            //skip BOM
+            is.read();
+            is.read();
+            is.read();
+            try (Reader source = new InputStreamReader(is, Charset.forName("UTF-8"));) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = source.read(buffer)) >= 0) {
+                    expectedText.append(buffer, 0, n);
+                }
+            }
+        }
+        try (
+                InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-8.txt");
+                ) {
+            //skip BOM
+            is.read();
+            is.read();
+            is.read();
+            try(BranchReader reader = BranchReader.create(is);) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = reader.read(buffer)) >= 0) {
+                    resultText.append(buffer, 0, n);
+                }
+            }
+        }
+        assertEquals(expectedText.toString(), resultText.toString());
+
+        resultText.delete(0, resultText.length());
+        try (BranchReader reader = BranchReader.create(getClass().getClassLoader().getResourceAsStream("2-utf-8.txt"));) {
+            char[] buffer = new char[0x1000];
+            int n;
+            while ((n = reader.read(buffer)) >= 0) {
+                resultText.append(buffer, 0, n);
+            }
+        }
+        assertEquals(expectedText.toString(), resultText.toString());
+    }
+
+    /**
+     * Test of create method, of class BranchReader.
+     */
+    @Test
+    public void testCreate_InputStream_3rg_UTF16BE() throws Exception {
+        System.out.println("testCreate_InputStream_3rg_UTF16BE");
+        StringBuilder expectedText = new StringBuilder();
+        StringBuilder resultText = new StringBuilder();
+
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-8.txt");) {
+            //skip BOM
+            is.read();
+            is.read();
+            is.read();
+            try (Reader source = new InputStreamReader(is, Charset.forName("UTF-8"));) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = source.read(buffer)) >= 0) {
+                    expectedText.append(buffer, 0, n);
+                }
+            }
+        }
+        try(InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-16be.txt");) {
+            //skip BOM
+            is.read();
+            is.read();
+            try (BranchReader reader = BranchReader.create(is, "UTF-16BE", true);) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = reader.read(buffer)) >= 0) {
+                    resultText.append(buffer, 0, n);
+                }
+            }
+        }
+        assertEquals(expectedText.toString(), resultText.toString());
+
+        resultText.delete(0, resultText.length());
+        try(InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-16be.txt");) {
+            try (BranchReader reader = BranchReader.create(is, "UTF-16LE", false);) {
+                char[] buffer = new char[0x1000];
+                int n;
+                while ((n = reader.read(buffer)) >= 0) {
+                    resultText.append(buffer, 0, n);
+                }
+            }
+        }
+        assertEquals(expectedText.toString(), resultText.toString());
+    }
+
 }

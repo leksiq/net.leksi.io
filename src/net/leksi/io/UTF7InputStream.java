@@ -120,6 +120,12 @@ public class UTF7InputStream extends InputStream {
     }
     
     @Override
+    public void close() throws IOException {
+        source.close();
+        super.close();
+    }
+    
+    @Override
     public int read() throws IOException {
         int res = -1; // return value
         if(tail == bufferSize) { // more data needed

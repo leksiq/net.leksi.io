@@ -30,6 +30,8 @@
 package net.leksi.io;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -88,6 +90,56 @@ abstract public class BranchReader extends Reader {
      */
     static public BranchReader create(final Reader source) {
         return new Root(source).root();
+    }
+    
+    /**
+     * A factory method for creation of an {@code BranchReader} object of 
+     * the concrete implementation based on the openned underlying
+     * {@code InputStream}. Reads and parses BOM if presents. Overwrites charset
+     * defined by BOM with {@code encoding} if {@code overwriteBOM} is 
+     * {@code true}. Applies {@code encoding} charser if there is no BOM.
+     * 
+     * @param source   the underlying {@code InputStream}.
+     * @param encoding the charset name to apply if there is no BOM or 
+     *                 {@code overwriteBOM} is {@code true}.
+     * @param overwriteBOM the flag signaling whether to apply {@code encoding}
+     *                     charset regarless if there is BOM.
+     * @return root {@code BranchReader} object
+     * @throws IOException underlying IOException
+     */
+    static public BranchReader create(final InputStream source, 
+            final String encoding, final boolean overwriteBOM) 
+            throws IOException {
+        BranchInputStream stream = BranchInputStream.create(source);
+        String charsetName = BOM.test(stream);
+        InputStream input = stream.getBranches()[0];
+        if(encoding != null) {
+            if(overwriteBOM) {
+                charsetName = encoding;
+            }
+        }
+        if("UTF-7".equals(charsetName)) {
+            input = new UTF7InputStream(input);
+            charsetName = "UTF-16BE";
+        }
+        if(charsetName == null) {
+            charsetName = "UTF-8";
+        }
+        return BranchReader.create(new InputStreamReader(input, charsetName));
+    }
+    
+    /**
+     * A factory method for creation of an {@code BranchReader} object of 
+     * the concrete implementation based on the openned underlying
+     * {@code InputStream}. Reads and parses BOM if presents. Applies 
+     * UTF-8 charser if there is no BOM.
+     * 
+     * @param source   the underlying {@code InputStream}.
+     * @return root {@code BranchReader} object
+     * @throws IOException underlying IOException
+     */
+    static public BranchReader create(final InputStream source) throws IOException {
+        return BranchReader.create(source, null, false);
     }
     
     /**
@@ -231,8 +283,8 @@ abstract public class BranchReader extends Reader {
                             long dataLength = endChunk.offset + endChunk.length;
                             if (position + len > dataLength && !isSourceEnded) {
                                 /*
-                                 * Should read from the underlying
-                                 * {@code Reader}.
+                                 * Should read from the underlying {@code
+                                 * Reader}.
                                  */
                                 int leftReadCount = (int) (position + len - dataLength);
                                 /*
@@ -258,7 +310,7 @@ abstract public class BranchReader extends Reader {
                             }
                         }
                     }
-                    while (readCount < len) {
+                    while (!isClosed.get() && readCount < len) {
                         int from;
                         int n;
                         if (position >= chunk.offset + chunk.length) {
@@ -278,17 +330,18 @@ abstract public class BranchReader extends Reader {
                             break;
                         }
                     }
-                    res = (readCount > 0 ? readCount : -1);
+                    res = (readCount > 0 && !isClosed.get() ? readCount : -1);
                 }
                 return res;
             }
 
             @Override
-            public void close() {
+            public void close() throws IOException {
                 synchronized (Root.this) {
                     branches.remove(id);
                     isClosed.set(true);
                     if (branches.isEmpty() && source != null) {
+                        source.close();
                         source = null;
                     }
                 }
@@ -317,7 +370,12 @@ abstract public class BranchReader extends Reader {
                         }
                     }
                     for(Branch branch: toClose) {
-                        branch.close();
+                        try {
+                            branch.close();
+                        } catch (IOException ex) {
+                            // Not reacheable as underlying source never
+                            // close here
+                        }
                     }
                 }
                 return true;
