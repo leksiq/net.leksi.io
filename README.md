@@ -79,10 +79,11 @@ skipped (except the case UTF-7, when the BOM should be decoded first)
     try(BranchInputStream stream = BranchInputStream.create(inputStream);) {
         String charsetName = BOM.test(stream);
         BranchInputStream bis = stream.getBranches()[0];
-        try(BranchReader reader = BranchReader.create(charsetName != null ? 
+        try(InputStreamReader isr = charsetName != null ? 
                 new InputStreamReader(bis, charsetName) :
-                new InputStreamReader(bis)
-                )) {
+                new InputStreamReader(bis);
+                BranchReader reader = BranchReader.create(isr)
+                ) {
         ...
         }
     }
