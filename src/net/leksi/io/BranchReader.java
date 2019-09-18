@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -78,6 +79,14 @@ abstract public class BranchReader extends Reader {
      * @return boolean indicating the opertion was successful
      */
     abstract public boolean closeOthers();
+    
+    /**
+     * Returns historical name or null if closed or not supported at 
+     * underlying {@code Reader}.
+     * @return String Historical name or null if closed or not supported at 
+     * underlying {@code Reader}.
+     */
+    abstract public String getEncoding();
     
     /**
      * A factory method for creation of an {@code BranchReader} object of 
@@ -201,14 +210,18 @@ abstract public class BranchReader extends Reader {
          */
         private Chunk endChunk = new Chunk(0);
         /**
-         * The class {@code Branch} is a concrete implementation of the abstract
-         * {@code BranchReader}.
-         */
-        /**
          * Generates ids for branches 
          */
         private AtomicLong idGenerator = new AtomicLong(0);
-        
+        /**
+         * Historical name of the encoding or null
+         */
+        private String encodingName = null;
+       
+        /**
+         * The class {@code Branch} is a concrete implementation of the abstract
+         * {@code BranchReader}.
+         */
         private class Branch extends BranchReader {
             /**
              * The current offset relative to the issue of the 
@@ -381,6 +394,13 @@ abstract public class BranchReader extends Reader {
                 return true;
             }
 
+            @Override
+            public String getEncoding() {
+                synchronized(Root.this) {
+                    return encodingName;
+                }
+            }
+
         }
         
         /**
@@ -390,6 +410,15 @@ abstract public class BranchReader extends Reader {
          */
         private Root(final Reader source) {
             this.source = source;
+            if(this.source instanceof InputStreamReader) {
+                encodingName = ((InputStreamReader)this.source).getEncoding();
+            } else {
+                try {
+                    Method method = this.source.getClass().getMethod(
+                            "getEncoding", new Class[]{});
+                    encodingName = (String)method.invoke(this.source, new Object[]{});
+                } catch (Exception ex) { }
+            }
         }
 
         /**

@@ -99,7 +99,7 @@ public class BranchReaderTest {
          * Read source file into refernce text
          */
         try(
-            Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource));
+            Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource), "UTF-8");
         ) {
             char buf[] = new char[0x1000];
             int n = 0;
@@ -117,9 +117,10 @@ public class BranchReaderTest {
             threads.clear();
             gen_id.set(0);
             try(
-                Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource));
+                Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream(resource), "UTF-8");
                 BranchReader result = BranchReader.create(source);
             ) {
+                assertEquals(Charset.forName("UTF-8"), Charset.forName(result.getEncoding()));
                 /**
                  * Collect initial branches
                  */
@@ -415,6 +416,31 @@ public class BranchReaderTest {
             }
         }
         assertEquals(expectedText.toString(), resultText.toString());
+    }
+    
+    class Reader1 extends Reader {
+
+        @Override
+        public int read(char[] cbuf, int off, int len) throws IOException {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        @Override
+        public void close() throws IOException {
+        }
+        
+        public String getEncoding() {
+            return "UTF8";
+        }
+        
+    }
+    
+    @Test
+    public void testGetEncoding() throws Exception {
+        System.out.println("testGetEncoding");
+        try(BranchReader reader = BranchReader.create(new Reader1());) {
+            assertEquals(Charset.forName("UTF-8"), Charset.forName(reader.getEncoding()));
+        }
     }
 
 }
