@@ -31,8 +31,6 @@ package net.leksi.io;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.stream.Collectors;
 
 /**
  * Tests BOM (Byte Order Mark) of data from {@code BranchInputSource} and 
