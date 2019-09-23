@@ -88,6 +88,7 @@ abstract public class BranchInputStream extends InputStream {
      * 
      * @param source the preliminary openned {@code InputStream}
      * @param chunkSize defines size of byte chunk instead of default one.
+    *                  chunkSize &lt;= 0 means default.
      * @return root {@code BranchInputStream} object
      */
     static public BranchInputStream create(final InputStream source, 
