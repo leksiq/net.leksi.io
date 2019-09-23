@@ -76,8 +76,9 @@ abstract public class BranchInputStream extends InputStream {
     /**
      * Closes all branches except this
      * @return boolean indicating the opertion was successful
+     * @throws java.io.IOException in  the case of error
      */
-    abstract public boolean closeOthers();
+    abstract public boolean closeOthers() throws IOException;
     
     /**
      * A factory method for creation of an {@code BranchInputStream} object of 
@@ -172,7 +173,7 @@ abstract public class BranchInputStream extends InputStream {
         /**
          * Generates ids for branches 
          */
-        private AtomicLong idGenerator = new AtomicLong(0);
+        private final AtomicLong idGenerator = new AtomicLong(0);
         
         /**
          * The class {@code Branch} is a concrete implementation of the abstract
@@ -309,7 +310,7 @@ abstract public class BranchInputStream extends InputStream {
             }
 
             @Override
-            public boolean closeOthers() {
+            public boolean closeOthers() throws IOException {
                 synchronized(Root.this) {
                     if(isClosed()) {
                         return false;
@@ -321,12 +322,7 @@ abstract public class BranchInputStream extends InputStream {
                         }
                     }
                     for(Branch branch: toClose) {
-                        try {
-                            branch.close();
-                        } catch (IOException ex) {
-                            // Not reacheable as underlying source never
-                            // close here
-                        }
+                        branch.close();
                     }
                 }
                 return true;
@@ -339,9 +335,12 @@ abstract public class BranchInputStream extends InputStream {
          * 
          * @param source the underlying {@code InputStream}.
          * @param chunkSize defines size of byte chunk instead of default one.
+         *                  chunkSize &lt;= 0 means default.
          */
         private Root(final InputStream source, final int chunkSize) {
-            this.chunkSize = chunkSize;
+            if(chunkSize > 0) {
+                this.chunkSize = chunkSize;
+            }
             this.source = source;
         }
 

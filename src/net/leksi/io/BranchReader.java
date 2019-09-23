@@ -48,6 +48,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 abstract public class BranchReader extends Reader {
     
+    static final private int DEFAULT_CHUNK_SIZE = 0x1000;
+    
     /**
      * Returns an array of {@code count} new branches {@code BranchReader}
      * which can be read from the current position of the parent's 
@@ -77,8 +79,9 @@ abstract public class BranchReader extends Reader {
     /**
      * Closes all branches except this
      * @return boolean indicating the opertion was successful
+     * @throws java.io.IOException in  the case of error
      */
-    abstract public boolean closeOthers();
+    abstract public boolean closeOthers() throws IOException;
     
     /**
      * Returns historical name or null if closed or not supported at 
@@ -104,6 +107,22 @@ abstract public class BranchReader extends Reader {
     /**
      * A factory method for creation of an {@code BranchReader} object of 
      * the concrete implementation based on the openned underlying
+     * {@code Reader}. The  reading is possible from the current position of the 
+     * {@code source}.
+     * 
+     * @param source the preliminary openned {@code Reader}
+     * @param chunkSize defines size of byte chunk instead of default one.
+     *                  chunkSize &lt;= 0 means default.
+     * @return root {@code BranchReader} object
+     */
+    static public BranchReader create(final Reader source, 
+            final int chunkSize) {
+        return new Root(source, chunkSize).root();
+    }
+    
+    /**
+     * A factory method for creation of an {@code BranchReader} object of 
+     * the concrete implementation based on the openned underlying
      * {@code InputStream}. Reads and parses BOM if presents. Overwrites charset
      * defined by BOM with {@code encoding} if {@code overwriteBOM} is 
      * {@code true}. Applies {@code encoding} charser if there is no BOM.
@@ -113,12 +132,14 @@ abstract public class BranchReader extends Reader {
      *                 {@code overwriteBOM} is {@code true}.
      * @param overwriteBOM the flag signaling whether to apply {@code encoding}
      *                     charset regarless if there is BOM.
+     * @param chunkSize defines size of byte chunk instead of default one.
+     *                  chunkSize &lt;= 0 means default.
      * @return root {@code BranchReader} object
      * @throws IOException underlying IOException
      */
     static public BranchReader create(final InputStream source, 
-            final String encoding, final boolean overwriteBOM) 
-            throws IOException {
+            final String encoding, final boolean overwriteBOM,
+            final int chunkSize) throws IOException {
         BranchInputStream stream = BranchInputStream.create(source);
         String charsetName = BOM.test(stream);
         InputStream input = stream.getBranches()[0];
@@ -134,7 +155,8 @@ abstract public class BranchReader extends Reader {
         if(charsetName == null) {
             charsetName = "UTF-8";
         }
-        return BranchReader.create(new InputStreamReader(input, charsetName));
+        return BranchReader.create(new InputStreamReader(input, charsetName),
+                chunkSize);
     }
     
     /**
@@ -148,7 +170,7 @@ abstract public class BranchReader extends Reader {
      * @throws IOException underlying IOException
      */
     static public BranchReader create(final InputStream source) throws IOException {
-        return BranchReader.create(source, null, false);
+        return BranchReader.create(source, null, false, 0);
     }
     
     /**
@@ -192,6 +214,9 @@ abstract public class BranchReader extends Reader {
      * {@code BranchReader} objects.
      */
     private static class Root {
+
+        private int chunkSize = DEFAULT_CHUNK_SIZE;
+    
         /**
          * The underlying {@code Reader}.
          */
@@ -212,7 +237,7 @@ abstract public class BranchReader extends Reader {
         /**
          * Generates ids for branches 
          */
-        private AtomicLong idGenerator = new AtomicLong(0);
+        private final AtomicLong idGenerator = new AtomicLong(0);
         /**
          * Historical name of the encoding or null
          */
@@ -299,26 +324,32 @@ abstract public class BranchReader extends Reader {
                                  * Should read from the underlying {@code
                                  * Reader}.
                                  */
-                                int leftReadCount = (int) (position + len - dataLength);
-                                /*
-                                 * Allocate new chunk and add it to list
-                                 */
-                                endChunk.next = new Chunk(leftReadCount);
-                                endChunk.next.offset = dataLength;
-                                endChunk = endChunk.next;
-
+                                int leftReadCount = (int) (position + len - 
+                                        dataLength);
+                                int leftChunkLength = endChunk.buffer.length - 
+                                        endChunk.length;
                                 while (leftReadCount > 0) {
+                                    if (leftChunkLength == 0) {
+                                        /*
+                                         * Allocate new chunk and add it to list
+                                         */
+                                        endChunk.next = new Chunk(leftReadCount);
+                                        endChunk.next.offset = dataLength;
+                                        endChunk = endChunk.next;
+                                        leftChunkLength = endChunk.buffer.length;
+                                    }
+
                                     int n = source.read(endChunk.buffer,
                                             endChunk.length,
                                             Math.min(leftReadCount,
-                                                    endChunk.buffer.length
-                                                    - endChunk.length));
+                                                    leftChunkLength));
                                     if (n <= 0) {
                                         isSourceEnded = true;
                                         break;
                                     }
                                     endChunk.length += n;
                                     leftReadCount -= n;
+                                    leftChunkLength -= n;
                                 }
                             }
                         }
@@ -347,7 +378,7 @@ abstract public class BranchReader extends Reader {
                 }
                 return res;
             }
-
+            
             @Override
             public void close() throws IOException {
                 synchronized (Root.this) {
@@ -371,7 +402,7 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public boolean closeOthers() {
+            public boolean closeOthers() throws IOException {
                 synchronized(Root.this) {
                     if(isClosed()) {
                         return false;
@@ -383,12 +414,7 @@ abstract public class BranchReader extends Reader {
                         }
                     }
                     for(Branch branch: toClose) {
-                        try {
-                            branch.close();
-                        } catch (IOException ex) {
-                            // Not reacheable as underlying source never
-                            // close here
-                        }
+                        branch.close();
                     }
                 }
                 return true;
@@ -406,18 +432,35 @@ abstract public class BranchReader extends Reader {
         /**
          * Creates new {@code Root} object with an underlying {@code Reader}.
          * 
+         * @param source the underlying {@code InputStream}.
+         * @param chunkSize defines size of byte chunk instead of default one.
+         */
+        private Root(final Reader source, final int chunkSize) {
+            this.chunkSize = chunkSize;
+            this.source = source;
+            init();
+        }
+
+        /**
+         * Creates new {@code Root} object with an underlying {@code Reader}.
+         * 
          * @param source the underlying {@code Reader}.
          */
         private Root(final Reader source) {
             this.source = source;
-            if(this.source instanceof InputStreamReader) {
-                encodingName = ((InputStreamReader)this.source).getEncoding();
+            init();
+        }
+        
+        private void init() {
+            if (this.source instanceof InputStreamReader) {
+                encodingName = ((InputStreamReader) this.source).getEncoding();
             } else {
                 try {
                     Method method = this.source.getClass().getMethod(
                             "getEncoding", new Class[]{});
-                    encodingName = (String)method.invoke(this.source, new Object[]{});
-                } catch (Exception ex) { }
+                    encodingName = (String) method.invoke(this.source, new Object[]{});
+                } catch (Exception ex) {
+                }
             }
         }
 

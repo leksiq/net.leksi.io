@@ -31,10 +31,13 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -92,9 +95,62 @@ public class BranchReaderTest {
     }
 
     @Test
+    public void testCloseOthers() throws Exception {
+        System.out.println("testCloseOthers");
+        text.delete(0, text.length());
+        /**
+         * Read source file into refernce text
+         */
+        try(
+            Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream("1.zip"), "UTF-8");
+        ) {
+            char buf[] = new char[0x1000];
+            int n = 0;
+            while((n = source.read(buf)) > 0) {
+                text.append(buf, 0, n);
+            }
+        }
+        try(
+            Reader source = new InputStreamReader(getClass().getClassLoader().getResourceAsStream("1.zip"), "UTF-8");
+            BranchReader result = BranchReader.create(source);
+        ) {
+            BranchReader[] br = result.branch(2);
+            char buf1[] = new char[text.length()];
+            int n = result.read(buf1);
+            assertEquals(text.length(), n);
+            
+            Thread t1 = new Thread(() -> {
+                try {
+                    int res = br[0].read(buf1);
+                } catch (Exception ex) {
+                    fail(ex.getClass().getSimpleName() + ": " + ex.getMessage() + "\n    " + Arrays.stream(ex.getStackTrace()).map(e -> e.toString()).collect(Collectors.joining("\n    ")));
+                }
+            });
+            
+            Thread t2 = new Thread(() -> {
+                try {
+                    boolean res = br[1].closeOthers();
+                    assertTrue(res);
+                } catch (Exception ex) {
+                    fail(ex.getClass().getSimpleName() + ": " + ex.getMessage() + "\n    " + Arrays.stream(ex.getStackTrace()).map(e -> e.toString()).collect(Collectors.joining("\n    ")));
+                }
+            });
+            t1.start();
+            t2.start();
+            if(t1.isAlive()) {
+                t1.join();
+            }
+            if(t2.isAlive()) {
+                t2.join();
+            }
+        }
+
+    }
+    @Test
 //    public void testCreate1() throws Exception {}
     public void testCreate() throws Exception {
         System.out.println("testCreate");
+        text.delete(0, text.length());
         /**
          * Read source file into refernce text
          */
@@ -395,7 +451,7 @@ public class BranchReaderTest {
             //skip BOM
             is.read();
             is.read();
-            try (BranchReader reader = BranchReader.create(is, "UTF-16BE", true);) {
+            try (BranchReader reader = BranchReader.create(is, "UTF-16BE", true, 0);) {
                 char[] buffer = new char[0x1000];
                 int n;
                 while ((n = reader.read(buffer)) >= 0) {
@@ -407,7 +463,7 @@ public class BranchReaderTest {
 
         resultText.delete(0, resultText.length());
         try(InputStream is = getClass().getClassLoader().getResourceAsStream("2-utf-16be.txt");) {
-            try (BranchReader reader = BranchReader.create(is, "UTF-16LE", false);) {
+            try (BranchReader reader = BranchReader.create(is, "UTF-16LE", false, 0);) {
                 char[] buffer = new char[0x1000];
                 int n;
                 while ((n = reader.read(buffer)) >= 0) {
