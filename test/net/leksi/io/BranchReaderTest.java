@@ -31,13 +31,10 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -254,12 +251,14 @@ public class BranchReaderTest {
              * Rest length before half for initial branches
              */
             int rest_len = id < initial_readers_count || scenario == 1 ? text.length() / 2 : -1;
+            int numReads = 0;
             boolean closedOthers = false;
             try {
                 if(scenario != 1 && !br.isClosed()) {
                     assertEquals(0, br.read(buf, 0, 0));
                 }
                 while(true) {
+                    numReads++;
                     if(rest_len > 0 && rest_len < buf.length) {
                         n = br.read(buf, 0, rest_len);
                     } else {
@@ -276,36 +275,45 @@ public class BranchReaderTest {
                         }
                         break;
                     }
-                    sb.append(buf, 0, n);
-                    rest_len -= n;
-                    if(scenario == 0) {
-                        if(id < initial_readers_count && rest_len == 0) {
-                            /**
-                             * half of the way
-                             */
-                            rest_len = -1;
-                            if (id % 2 == 0) {
-                                /**
-                                 * close even
-                                 */
-                                br.close();
-                                strings.put(id, sb.toString());
-                                break;
-                            } else {
-                                /**
-                                 * branch odd
-                                 */
-                                new_thread(br.branch(1)[0], scenario).start();
-                            }
-                        }
+                    if(numReads == (id % 2 == 0 ?  2 : 4)) {
+                        br.unread(buf);
                     } else {
-                        if(rest_len == 0) {
-                            rest_len = -1;
-                            closedOthers = br.closeOthers();
-                            assertEquals(1, br.getBranches().length);
-                            if(closedOthers) {
-                                closedOthersId = id;
-                                assertEquals(br, br.getBranches()[0]);
+                        if(numReads == (id % 2 == 0 ?  4 : 2)) {
+                            br.unread(buf[n - 1]);
+                            sb.append(buf, 0, n - 1);
+                        } else {
+                            sb.append(buf, 0, n);
+                        }
+                        rest_len -= n;
+                        if(scenario == 0) {
+                            if(id < initial_readers_count && rest_len == 0) {
+                                /**
+                                 * half of the way
+                                 */
+                                rest_len = -1;
+                                if (id % 2 == 0) {
+                                    /**
+                                     * close even
+                                     */
+                                    br.close();
+                                    strings.put(id, sb.toString());
+                                    break;
+                                } else {
+                                    /**
+                                     * branch odd
+                                     */
+                                    new_thread(br.branch(1)[0], scenario).start();
+                                }
+                            }
+                        } else {
+                            if(rest_len == 0) {
+                                rest_len = -1;
+                                closedOthers = br.closeOthers();
+                                assertEquals(1, br.getBranches().length);
+                                if(closedOthers) {
+                                    closedOthersId = id;
+                                    assertEquals(br, br.getBranches()[0]);
+                                }
                             }
                         }
                     }

@@ -92,6 +92,41 @@ abstract public class BranchReader extends Reader {
     abstract public String getEncoding();
     
     /**
+     * Pushes back an array of characters by copying it to the front of the 
+     * pushback buffer.
+     * @param cbuf Character array
+     * @throws java.io.IOException If there is insufficient room in the 
+     *                              pushback buffer, or if some other I/O error 
+     *                              occurs
+     */
+    public void unread(char[] cbuf) throws IOException {
+        unread(cbuf, 0, cbuf.length);
+    }
+
+    /**
+     * Pushes back a portion of an array of characters by copying it to the 
+     * front of the pushback buffer.
+     * @param cbuf Character array
+     * @param off Offset of first character to push back
+     * @param len Number of characters to push back
+     * @throws java.io.IOException If there is insufficient room in the 
+     *                              pushback buffer, or if some other I/O error 
+     *                              occurs
+     */
+    abstract public void unread(char[] cbuf, int off, int len) 
+            throws IOException;
+
+    /**
+     * Pushes back a single character by copying it to the front of the pushback 
+     * buffer.    
+     * @param c The int value representing a character to be pushed back
+     * @throws java.io.IOException If there is insufficient room in the 
+     *                              pushback buffer, or if some other I/O error 
+     *                              occurs
+     */
+    abstract public void unread(int c) throws IOException;
+    
+    /**
      * A factory method for creation of an {@code BranchReader} object of 
      * the concrete implementation based on the openned underlying
      * {@code Reader}. The  reading is possible from the current position of the 
@@ -265,6 +300,11 @@ abstract public class BranchReader extends Reader {
              * {@code Branch}'s id to distinguish thorously
              */
             private long id = idGenerator.incrementAndGet();
+            
+            /**
+             * Pushback buffer
+             */
+            private StringBuffer pushbackBuffer = null;
 
             /**
              * Creates a branch with a parent if it is given
@@ -316,16 +356,26 @@ abstract public class BranchReader extends Reader {
                     if(len == 0) {
                         return 0;
                     }
-                    if (position + len > endChunk.offset + endChunk.length) {
+                    if(pushbackBuffer != null && pushbackBuffer.length() > 0) {
+                        if(len <= pushbackBuffer.length()) {
+                            pushbackBuffer.getChars(0, len, cbuf, off);
+                            readCount += len;
+                        } else {
+                            pushbackBuffer.getChars(0, pushbackBuffer.length(), cbuf, off);
+                            readCount += pushbackBuffer.length();
+                        }
+                        pushbackBuffer.delete(0, readCount);
+                    }
+                    if (position + len - readCount > endChunk.offset + endChunk.length) {
                         synchronized(Root.this) {
                             long dataLength = endChunk.offset + endChunk.length;
-                            if (position + len > dataLength && !isSourceEnded) {
+                            if (position + len - readCount > dataLength && !isSourceEnded) {
                                 /*
                                  * Should read from the underlying {@code
                                  * Reader}.
                                  */
-                                int leftReadCount = (int) (position + len - 
-                                        dataLength);
+                                int leftReadCount = (int) (position + len  - 
+                                        readCount - dataLength);
                                 int leftChunkLength = endChunk.buffer.length - 
                                         endChunk.length;
                                 while (leftReadCount > 0) {
@@ -425,6 +475,22 @@ abstract public class BranchReader extends Reader {
                 synchronized(Root.this) {
                     return encodingName;
                 }
+            }
+
+            @Override
+            public void unread(char[] cbuf, int off, int len) throws IOException {
+                if(pushbackBuffer == null) {
+                    pushbackBuffer = new StringBuffer(chunkSize);
+                }
+                pushbackBuffer.append(cbuf, off, len);
+            }
+
+            @Override
+            public void unread(int c) throws IOException {
+                if(pushbackBuffer == null) {
+                    pushbackBuffer = new StringBuffer(chunkSize);
+                }
+                pushbackBuffer.append((char)c);
             }
 
         }
