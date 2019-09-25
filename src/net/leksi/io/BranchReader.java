@@ -319,6 +319,9 @@ abstract public class BranchReader extends Reader {
                      */
                     position = parent.position;
                     chunk = parent.chunk;
+                    if(parent.pushbackBuffer != null) {
+                        pushbackBuffer = new StringBuffer(parent.pushbackBuffer);
+                    }
                 }
             }
 
