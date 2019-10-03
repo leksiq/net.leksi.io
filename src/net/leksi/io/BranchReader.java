@@ -35,7 +35,9 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -90,6 +92,19 @@ abstract public class BranchReader extends Reader {
      * underlying {@code Reader}.
      */
     abstract public String getEncoding();
+    
+    /**
+     * Returns current line number starting from 1.
+     * @return current line number
+     */
+    abstract public int getLine();
+    
+    /**
+     * Returns current char position in line starting from 1. If surrogate 
+     * symbols present, columns in line should be calculated.
+     * @return current char position in line 
+     */
+    abstract public int getCharPositionInLine();
     
     /**
      * Pushes back an array of characters by copying it to the front of the 
@@ -277,6 +292,16 @@ abstract public class BranchReader extends Reader {
          * Historical name of the encoding or null
          */
         private String encodingName = null;
+        /**
+         * New line char (\n or \r, what met first)
+         */
+        private char newLine = 0;
+        
+        /**
+         * Stores columns counts at lines
+         */
+        private Map<Integer, Integer> columnsCounts = 
+                Collections.synchronizedMap(new HashMap<>());
        
         /**
          * The class {@code Branch} is a concrete implementation of the abstract
@@ -300,11 +325,18 @@ abstract public class BranchReader extends Reader {
              * {@code Branch}'s id to distinguish thorously
              */
             private long id = idGenerator.incrementAndGet();
-            
             /**
              * Pushback buffer
              */
             private StringBuffer pushbackBuffer = null;
+            /**
+             *  Line of text
+             */
+            private int line = 1;
+            /**
+             *  Column of text
+             */
+            private int charPositionInLine = 1;
 
             /**
              * Creates a branch with a parent if it is given
@@ -319,6 +351,8 @@ abstract public class BranchReader extends Reader {
                      */
                     position = parent.position;
                     chunk = parent.chunk;
+                    line = parent.line;
+                    charPositionInLine = parent.charPositionInLine;
                     if(parent.pushbackBuffer != null) {
                         pushbackBuffer = new StringBuffer(parent.pushbackBuffer);
                     }
@@ -346,6 +380,41 @@ abstract public class BranchReader extends Reader {
             public boolean isClosed() {
                 return isClosed.get();
             }
+            
+            private void calculateLineAndColumnPushback(final char c) {
+                if(c == '\n' || c == '\r') {
+                    if(c == Root.this.newLine) {
+                        line--;
+                        charPositionInLine = columnsCounts.get(line);
+                    }
+                } else {
+                    if(charPositionInLine > 1) {
+                        charPositionInLine--;
+                    }
+                }
+            }
+            
+            private void calculateLineAndColumn(final char[] cbuf, 
+                    final int off, final int len) {
+                for(int i = 0; i < len; i++) {
+                    if(cbuf[off + i] == '\n' || cbuf[off + i] == '\r') {
+                        if(Root.this.newLine == 0) {
+                            synchronized(Root.this) {
+                                if (Root.this.newLine == 0) {
+                                    Root.this.newLine = cbuf[off + i];
+                                }
+                            }
+                        }
+                        if(cbuf[off + i] == Root.this.newLine) {
+                            columnsCounts.putIfAbsent(line, charPositionInLine);
+                            line++;
+                            charPositionInLine = 1;
+                        }
+                    } else {
+                        charPositionInLine++;
+                    }
+                }
+            }
 
             @Override
             public int read(final char[] cbuf, 
@@ -368,6 +437,7 @@ abstract public class BranchReader extends Reader {
                             readCount += pushbackBuffer.length();
                         }
                         pushbackBuffer.delete(0, readCount);
+                        calculateLineAndColumn(cbuf, off, readCount);
                     }
                     if (position + len - readCount > endChunk.offset + endChunk.length) {
                         synchronized(Root.this) {
@@ -421,6 +491,7 @@ abstract public class BranchReader extends Reader {
                             from = (int)(position - chunk.offset);
                             n = Math.min(chunk.length - from, len - readCount);
                             System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
+                            calculateLineAndColumn(chunk.buffer, from, n);
                             position += n;
                             readCount += n;
                         } else {
@@ -485,7 +556,10 @@ abstract public class BranchReader extends Reader {
                 if(pushbackBuffer == null) {
                     pushbackBuffer = new StringBuffer(chunkSize);
                 }
-                pushbackBuffer.append(cbuf, off, len);
+                pushbackBuffer.insert(0, cbuf, off, len);
+                for(int i = len - 1; i >= 0; i--) {
+                    calculateLineAndColumnPushback(cbuf[off + i]);
+                }
             }
 
             @Override
@@ -493,7 +567,19 @@ abstract public class BranchReader extends Reader {
                 if(pushbackBuffer == null) {
                     pushbackBuffer = new StringBuffer(chunkSize);
                 }
-                pushbackBuffer.append((char)c);
+                pushbackBuffer.insert(0, (char)c);
+                calculateLineAndColumnPushback((char)c);
+            }
+
+            @Override
+            public int getLine() {
+                return line;
+            }
+
+            @Override
+            public int getCharPositionInLine() {
+                return charPositionInLine;
+                        
             }
 
         }

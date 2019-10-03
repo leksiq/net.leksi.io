@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.io.StringReader;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,7 +69,7 @@ public class BranchReaderTest {
      */
 
     StringBuilder text = new StringBuilder();       // Reference text data
-    String resource = "1.txt";                      // Source text file
+    String resource = "kolesnica.txt_Ascii.txt ";   // Source text file
     int initial_readers_count = 123;                // Initial branches number
     int n_repeats = 100;                            // 
     Map<Integer, String> strings = Collections.synchronizedMap(new HashMap<>());
@@ -504,6 +505,63 @@ public class BranchReaderTest {
         System.out.println("testGetEncoding");
         try(BranchReader reader = BranchReader.create(new Reader1());) {
             assertEquals(Charset.forName("UTF-8"), Charset.forName(reader.getEncoding()));
+        }
+    }
+    
+//    @Test
+    public void testLinesColumns1() throws Exception {
+        System.out.println("testLinesColumns1");
+        try (StringReader sr = new StringReader("жопа\r\nдупа");
+                BranchReader source = BranchReader.create(sr);) {
+            char buf[] = new char[0x1000];
+            int n = source.read(buf);
+            System.out.println("line: " + source.getLine());
+            System.out.println("col: " + source.getCharPositionInLine());
+            int n1 = 4;
+            System.out.println(">>>" + String.copyValueOf(buf, n - n1, n1) + "<<<");
+            source.unread(buf, n - n1, n1);
+            System.out.println("line: " + source.getLine());
+            System.out.println("col: " + source.getCharPositionInLine());
+            source.unread(buf, n - n1 - 1, 1);
+            System.out.println("line: " + source.getLine());
+            System.out.println("col: " + source.getCharPositionInLine());
+            source.unread(buf, n - n1 - 2, 1);
+            System.out.println("line: " + source.getLine());
+            System.out.println("col: " + source.getCharPositionInLine());
+        }        
+    }
+    
+    @Test
+//    public void testLinesColumns0() throws Exception {}
+    public void testLinesColumns() throws Exception {
+        System.out.println("testLinesColumns");
+        try(
+            BranchReader source = BranchReader.create(getClass().getClassLoader().getResourceAsStream(resource), "UTF-8", false, 0x1000);
+        ) {
+            char buf[] = new char[0x1000];
+            int n = source.read(buf, 0, 0xAA8);
+//            System.out.println(String.valueOf(buf, 0, n));
+            assertEquals(29, source.getLine());
+            assertEquals(42, source.getCharPositionInLine());
+            
+//            System.out.println(String.valueOf(buf, 0x980, n - 0x980));
+            source.unread(buf, 0x980, n - 0x980);
+            assertEquals(28, source.getLine());
+            assertEquals(11, source.getCharPositionInLine());
+            
+            source.unread(buf[0x97F]);
+            assertEquals(28, source.getLine());
+            assertEquals(10, source.getCharPositionInLine());
+
+//            System.out.println(String.valueOf(buf, 0x975, 11));
+            source.unread(buf, 0x975, 11);
+            assertEquals(28, source.getLine());
+            assertEquals(1, source.getCharPositionInLine());
+            
+            source.unread(buf[0x974]);
+            assertEquals(27, source.getLine());
+            assertEquals(711, source.getCharPositionInLine());
+//  Начал с комендантского управления, где разыскал письмоводителя из учетно-транспортного отдела и с торжественным видом вернул ему занятый третьего дня рубль. Потом наведался на Симеоновскую площадь, в Главное управление казачьих войск, справиться о ходатайстве, поданном еще два месяца назад и увязшем в инстанциях. Оттуда переместился в Военно-железнодорожное ведомство - он давно добивался места архивариуса в тамошнем чертежном отделении. В тот день его маленькую, суетливую фигуру видели и в Управлении генерал-инспектора артиллерии на Захарьевской, и Управлении по ремонтированию на Морской, и даже в Комитете о раненых на Кирочной (Рыбников никак не мог получить справку о контузии в голову под Ляояном).
         }
     }
 
