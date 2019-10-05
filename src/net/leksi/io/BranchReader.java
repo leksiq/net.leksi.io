@@ -114,7 +114,7 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    public void unread(char[] cbuf) throws IOException {
+    public void unread(final char[] cbuf) throws IOException {
         unread(cbuf, 0, cbuf.length);
     }
 
@@ -128,7 +128,7 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    abstract public void unread(char[] cbuf, int off, int len) 
+    abstract public void unread(final char[] cbuf, final int off, final int len) 
             throws IOException;
 
     /**
@@ -139,7 +139,17 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    abstract public void unread(int c) throws IOException;
+    abstract public void unread(final int c) throws IOException;
+    
+    /**
+     * Trims <b>this</b> reader's avalable data to the current position of 
+     * <b>other</b> reader.
+     * @param other BranchReader instance which current position will be end of
+     * <b>this</b> reader
+     * @throws IOException when the <b>other</b> reader is not from the same 
+     * root or is closed or has less position.
+     */
+    abstract public void trim(final BranchReader other) throws IOException;
     
     /**
      * A factory method for creation of an {@code BranchReader} object of 
@@ -337,6 +347,10 @@ abstract public class BranchReader extends Reader {
              *  Column of text
              */
             private int charPositionInLine = 1;
+            /**
+             *  end position if was trimmed
+             */
+            private long endPosition = -1;
 
             /**
              * Creates a branch with a parent if it is given
@@ -362,17 +376,19 @@ abstract public class BranchReader extends Reader {
             @Override
             public BranchReader[] branch(final int count) throws IOException {
                 synchronized(Root.this) {
-                    BranchReader[] res;
+                    synchronized(this) {
+                        BranchReader[] res;
 
-                    if (isClosed()) {
-                        throw new IOException("Cannot branch closed reader");
+                        if (isClosed()) {
+                            throw new IOException("Cannot branch closed reader");
+                        }
+                        res = new BranchReader[count];
+                        for (int i = 0; i < count; i++) {
+                            res[i] = new Branch(this);
+                            branches.put(((Branch) res[i]).id, (Branch) res[i]);
+                        }
+                        return res;
                     }
-                    res = new BranchReader[count];
-                    for (int i = 0; i < count; i++) {
-                        res[i] = new Branch(this);
-                        branches.put(((Branch) res[i]).id, (Branch) res[i]);
-                    }
-                    return res;
                 }
             }
 
@@ -419,88 +435,93 @@ abstract public class BranchReader extends Reader {
             @Override
             public int read(final char[] cbuf, 
                     final int off, final int len) throws IOException {
-                int res = -1;              // returned result
-                int readCount = 0;          // cumulative count of chars copied 
-                                            // from (probably) several chunks
-                                            
-                if(!isClosed.get()) {
-                    boolean canRead = true;
-                    if(len == 0) {
-                        return 0;
-                    }
-                    if(pushbackBuffer != null && pushbackBuffer.length() > 0) {
-                        if(len <= pushbackBuffer.length()) {
-                            pushbackBuffer.getChars(0, len, cbuf, off);
-                            readCount += len;
-                        } else {
-                            pushbackBuffer.getChars(0, pushbackBuffer.length(), cbuf, off);
-                            readCount += pushbackBuffer.length();
-                        }
-                        pushbackBuffer.delete(0, readCount);
-                        calculateLineAndColumn(cbuf, off, readCount);
-                    }
-                    if (position + len - readCount > endChunk.offset + endChunk.length) {
-                        synchronized(Root.this) {
-                            long dataLength = endChunk.offset + endChunk.length;
-                            if (position + len - readCount > dataLength && !isSourceEnded) {
-                                /*
-                                 * Should read from the underlying {@code
-                                 * Reader}.
-                                 */
-                                int leftReadCount = (int) (position + len  - 
-                                        readCount - dataLength);
-                                int leftChunkLength = endChunk.buffer.length - 
-                                        endChunk.length;
-                                while (leftReadCount > 0) {
-                                    if (leftChunkLength == 0) {
-                                        /*
-                                         * Allocate new chunk and add it to list
-                                         */
-                                        endChunk.next = new Chunk(leftReadCount);
-                                        endChunk.next.offset = dataLength;
-                                        endChunk = endChunk.next;
-                                        leftChunkLength = endChunk.buffer.length;
-                                    }
+                synchronized(this) {
+                    int res = -1;              // returned result
+                    int readCount = 0;          // cumulative count of chars copied 
+                                                // from (probably) several chunks
 
-                                    int n = source.read(endChunk.buffer,
-                                            endChunk.length,
-                                            Math.min(leftReadCount,
-                                                    leftChunkLength));
-                                    if (n <= 0) {
-                                        isSourceEnded = true;
-                                        break;
+                    if(!isClosed.get()) {
+                        boolean canRead = true;
+                        if(len == 0) {
+                            return 0;
+                        }
+                        if(pushbackBuffer != null && pushbackBuffer.length() > 0) {
+                            if(len <= pushbackBuffer.length()) {
+                                pushbackBuffer.getChars(0, len, cbuf, off);
+                                readCount += len;
+                            } else {
+                                pushbackBuffer.getChars(0, pushbackBuffer.length(), cbuf, off);
+                                readCount += pushbackBuffer.length();
+                            }
+                            pushbackBuffer.delete(0, readCount);
+                            calculateLineAndColumn(cbuf, off, readCount);
+                        }
+                        if (position + len - readCount > endChunk.offset + endChunk.length) {
+                            synchronized(Root.this) {
+                                long dataLength = endChunk.offset + endChunk.length;
+                                if (position + len - readCount > dataLength && !isSourceEnded) {
+                                    /*
+                                     * Should read from the underlying {@code
+                                     * Reader}.
+                                     */
+                                    int leftReadCount = (int) (position + len  - 
+                                            readCount - dataLength);
+                                    int leftChunkLength = endChunk.buffer.length - 
+                                            endChunk.length;
+                                    while (leftReadCount > 0) {
+                                        if (leftChunkLength == 0) {
+                                            /*
+                                             * Allocate new chunk and add it to list
+                                             */
+                                            endChunk.next = new Chunk(leftReadCount);
+                                            endChunk.next.offset = dataLength;
+                                            endChunk = endChunk.next;
+                                            leftChunkLength = endChunk.buffer.length;
+                                        }
+
+                                        int n = source.read(endChunk.buffer,
+                                                endChunk.length,
+                                                Math.min(leftReadCount,
+                                                        leftChunkLength));
+                                        if (n <= 0) {
+                                            isSourceEnded = true;
+                                            break;
+                                        }
+                                        endChunk.length += n;
+                                        leftReadCount -= n;
+                                        leftChunkLength -= n;
                                     }
-                                    endChunk.length += n;
-                                    leftReadCount -= n;
-                                    leftChunkLength -= n;
                                 }
                             }
                         }
-                    }
-                    while (!isClosed.get() && readCount < len) {
-                        int from;
-                        int n;
-                        if (position >= chunk.offset + chunk.length) {
-                            canRead = false;
-                            if(chunk.next != null) {        
-                                chunk = chunk.next;
-                                canRead = true;
+                        while (!isClosed.get() && readCount < len) {
+                            int from;
+                            int n;
+                            if (position >= chunk.offset + chunk.length) {
+                                canRead = false;
+                                if(chunk.next != null) {        
+                                    chunk = chunk.next;
+                                    canRead = true;
+                                }
+                            }
+                            if(canRead) {
+                                from = (int)(position - chunk.offset);
+                                n = Math.min(chunk.length - from, len - readCount);
+                                if(endPosition >= 0 && endPosition - position <= Integer.MAX_VALUE) {
+                                    n = Math.min(n, (int)(endPosition - position));
+                                }
+                                System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
+                                calculateLineAndColumn(chunk.buffer, from, n);
+                                position += n;
+                                readCount += n;
+                            } else {
+                                break;
                             }
                         }
-                        if(canRead) {
-                            from = (int)(position - chunk.offset);
-                            n = Math.min(chunk.length - from, len - readCount);
-                            System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
-                            calculateLineAndColumn(chunk.buffer, from, n);
-                            position += n;
-                            readCount += n;
-                        } else {
-                            break;
-                        }
+                        res = (readCount > 0 && !isClosed.get() ? readCount : -1);
                     }
-                    res = (readCount > 0 && !isClosed.get() ? readCount : -1);
+                    return res;
                 }
-                return res;
             }
             
             @Override
@@ -580,6 +601,32 @@ abstract public class BranchReader extends Reader {
             public int getCharPositionInLine() {
                 return charPositionInLine;
                         
+            }
+
+            @Override
+            public void trim(BranchReader other) throws IOException {
+                long newEndPosition;
+                if(isClosed()) {
+                    throw new IOException("Cannot trim closed branch.");
+                }
+                if(other.isClosed()) {
+                    throw new IOException("Cannot trim by closed branch.");
+                }
+                synchronized(Root.this) {
+                    if(!branches.containsKey(((Branch)other).id)) {
+                        throw new IOException("Cannot trim by alien branch.");
+                    }
+                }
+                synchronized(other) {
+                    newEndPosition = ((Branch)other).position;
+                }
+                synchronized(this) {
+                    if(position > newEndPosition) {
+                        throw new IOException("Cannot trim to position: " + 
+                                newEndPosition + ", has: " + position);
+                    }
+                    endPosition = newEndPosition;
+                }
             }
 
         }
