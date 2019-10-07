@@ -114,7 +114,7 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    public void unread(char[] cbuf) throws IOException {
+    public void unread(final char[] cbuf) throws IOException {
         unread(cbuf, 0, cbuf.length);
     }
 
@@ -128,7 +128,7 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    abstract public void unread(char[] cbuf, int off, int len) 
+    abstract public void unread(final char[] cbuf, final int off, final int len) 
             throws IOException;
 
     /**
@@ -139,7 +139,17 @@ abstract public class BranchReader extends Reader {
      *                              pushback buffer, or if some other I/O error 
      *                              occurs
      */
-    abstract public void unread(int c) throws IOException;
+    abstract public void unread(final int c) throws IOException;
+    
+    /**
+     * Trims <b>this</b> reader's avalable data to the current position of 
+     * <b>other</b> reader.
+     * @param other BranchReader instance which current position will be end of
+     * <b>this</b> reader
+     * @throws IOException when the <b>other</b> reader is not from the same 
+     * root or is closed or has less position.
+     */
+    abstract public void trim(final BranchReader other) throws IOException;
     
     /**
      * A factory method for creation of an {@code BranchReader} object of 
@@ -337,6 +347,10 @@ abstract public class BranchReader extends Reader {
              *  Column of text
              */
             private int charPositionInLine = 1;
+            /**
+             *  end position if was trimmed
+             */
+            private long endPosition = -1;
 
             /**
              * Creates a branch with a parent if it is given
@@ -360,7 +374,7 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public BranchReader[] branch(final int count) throws IOException {
+            public synchronized BranchReader[] branch(final int count) throws IOException {
                 synchronized(Root.this) {
                     BranchReader[] res;
 
@@ -417,12 +431,12 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public int read(final char[] cbuf, 
+            public synchronized int read(final char[] cbuf, 
                     final int off, final int len) throws IOException {
                 int res = -1;              // returned result
                 int readCount = 0;          // cumulative count of chars copied 
                                             // from (probably) several chunks
-                                            
+
                 if(!isClosed.get()) {
                     boolean canRead = true;
                     if(len == 0) {
@@ -490,6 +504,9 @@ abstract public class BranchReader extends Reader {
                         if(canRead) {
                             from = (int)(position - chunk.offset);
                             n = Math.min(chunk.length - from, len - readCount);
+                            if(endPosition >= 0 && endPosition - position <= Integer.MAX_VALUE) {
+                                n = Math.min(n, (int)(endPosition - position));
+                            }
                             System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
                             calculateLineAndColumn(chunk.buffer, from, n);
                             position += n;
@@ -552,7 +569,7 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public void unread(char[] cbuf, int off, int len) throws IOException {
+            public synchronized void unread(char[] cbuf, int off, int len) throws IOException {
                 if(pushbackBuffer == null) {
                     pushbackBuffer = new StringBuffer(chunkSize);
                 }
@@ -563,7 +580,7 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public void unread(int c) throws IOException {
+            public synchronized void unread(int c) throws IOException {
                 if(pushbackBuffer == null) {
                     pushbackBuffer = new StringBuffer(chunkSize);
                 }
@@ -572,14 +589,40 @@ abstract public class BranchReader extends Reader {
             }
 
             @Override
-            public int getLine() {
+            public synchronized int getLine() {
                 return line;
             }
 
             @Override
-            public int getCharPositionInLine() {
+            public synchronized int getCharPositionInLine() {
                 return charPositionInLine;
                         
+            }
+
+            @Override
+            public void trim(BranchReader other) throws IOException {
+                long newEndPosition;
+                if(isClosed()) {
+                    throw new IOException("Cannot trim closed branch.");
+                }
+                if(other.isClosed()) {
+                    throw new IOException("Cannot trim by closed branch.");
+                }
+                synchronized(Root.this) {
+                    if(!branches.containsKey(((Branch)other).id)) {
+                        throw new IOException("Cannot trim by alien branch.");
+                    }
+                }
+                synchronized(other) {
+                    newEndPosition = ((Branch)other).position;
+                }
+                synchronized(this) {
+                    if(position > newEndPosition) {
+                        throw new IOException("Cannot trim to position: " + 
+                                newEndPosition + ", has: " + position);
+                    }
+                    endPosition = newEndPosition;
+                }
             }
 
         }
