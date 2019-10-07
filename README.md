@@ -94,3 +94,8 @@ skipped (except the case UTF-7, when the BOM should be decoded first)
 
 [coverage report](http://leksi.net/net.leksi.io/jacoco/)
 
+# JAR
+
+[net.leksi.io.jar](http://leksi.net/net.leksi.io/dist/net.leksi.io.jar)
+
+

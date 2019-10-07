@@ -507,10 +507,14 @@ abstract public class BranchReader extends Reader {
                             if(endPosition >= 0 && endPosition - position <= Integer.MAX_VALUE) {
                                 n = Math.min(n, (int)(endPosition - position));
                             }
-                            System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
-                            calculateLineAndColumn(chunk.buffer, from, n);
-                            position += n;
-                            readCount += n;
+                            if(n > 0) {
+                                System.arraycopy(chunk.buffer, from, cbuf, off + readCount, n);
+                                calculateLineAndColumn(chunk.buffer, from, n);
+                                position += n;
+                                readCount += n;
+                            } else {
+                                break;
+                            }
                         } else {
                             break;
                         }
@@ -609,7 +613,8 @@ abstract public class BranchReader extends Reader {
                     throw new IOException("Cannot trim by closed branch.");
                 }
                 synchronized(Root.this) {
-                    if(!branches.containsKey(((Branch)other).id)) {
+                    if(!branches.containsKey(((Branch)other).id) || 
+                            branches.get(((Branch)other).id) != other) {
                         throw new IOException("Cannot trim by alien branch.");
                     }
                 }

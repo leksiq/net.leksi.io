@@ -564,5 +564,82 @@ public class BranchReaderTest {
 //  Начал с комендантского управления, где разыскал письмоводителя из учетно-транспортного отдела и с торжественным видом вернул ему занятый третьего дня рубль. Потом наведался на Симеоновскую площадь, в Главное управление казачьих войск, справиться о ходатайстве, поданном еще два месяца назад и увязшем в инстанциях. Оттуда переместился в Военно-железнодорожное ведомство - он давно добивался места архивариуса в тамошнем чертежном отделении. В тот день его маленькую, суетливую фигуру видели и в Управлении генерал-инспектора артиллерии на Захарьевской, и Управлении по ремонтированию на Морской, и даже в Комитете о раненых на Кирочной (Рыбников никак не мог получить справку о контузии в голову под Ляояном).
         }
     }
+    
+    @Test
+    public void testTrim() throws Exception {
+        System.out.println("testTrim");
+        try(
+            BranchReader source = BranchReader.create(getClass().getClassLoader().getResourceAsStream(resource), "UTF-8", false, 0x1000);
+        ) {
+            BranchReader[] br = source.branch(3);
+            
+            br[0].close();
+            
+            try {
+                br[1].trim(br[0]);
+                assertTrue(false);
+            } catch (IOException ex) {
+                assertEquals("Cannot trim by closed branch.", ex.getMessage());
+            }
+
+            try {
+                br[0].trim(br[1]);
+                assertTrue(false);
+            } catch (IOException ex) {
+                assertEquals("Cannot trim closed branch.", ex.getMessage());
+            }
+
+            try (
+                    StringReader sr = new StringReader("test");
+                    BranchReader source1 = BranchReader.create(sr);
+                    ) {
+                try {
+                    br[1].trim(source1);
+                    assertTrue(false);
+                } catch (IOException ex) {
+                    assertEquals("Cannot trim by alien branch.", ex.getMessage());
+                }
+                try {
+                    source1.trim(br[1]);
+                    assertTrue(false);
+                } catch (IOException ex) {
+                    assertEquals("Cannot trim by alien branch.", ex.getMessage());
+                }
+            }
+            
+            char[] buf = new char[0x1000];
+            int n;
+            int len = 0;
+            StringBuilder sb = new StringBuilder();
+            
+            while((n = source.read(buf)) > 0) {
+                len += n;
+                sb.append(buf, 0, n);
+                if(len > 123456) {
+                    br[1].trim(source);
+                    break;
+                }
+            }
+            StringBuilder sb1 = new StringBuilder();
+            while((n = br[1].read(buf)) > 0) {
+                sb1.append(buf, 0, n);
+            }
+            assertEquals(sb.toString(), sb1.toString());
+
+            try {
+                len = 0;
+                while((n = br[2].read(buf)) > 0) {
+                    len += n;
+                    if(len > 123456) {
+                        br[2].read(buf);
+                        br[2].trim(source);
+                        break;
+                    }
+                }
+            } catch(IOException ex) {
+                assertTrue(ex.getMessage().startsWith("Cannot trim to position"));
+            }
+        }
+    }
 
 }
