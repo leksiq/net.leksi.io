@@ -95,5 +95,6 @@ skipped (except the case UTF-7, when the BOM should be decoded first)
 # JAR
 
 [net.leksi.io.jar](http://leksi.net/net.leksi.io/dist/net.leksi.io.jar)
+[net.leksi.io.jar MD5](http://leksi.net/net.leksi.io/dist/net.leksi.io.jar.MD5)
 
 
