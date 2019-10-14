@@ -336,12 +336,9 @@ abstract public class BranchInputStream extends InputStream {
          * 
          * @param source the underlying {@code InputStream}.
          * @param chunkSize defines size of byte chunk instead of default one.
-         *                  chunkSize &lt;= 0 means default.
          */
         private Root(final InputStream source, final int chunkSize) {
-            if(chunkSize > 0) {
-                this.chunkSize = chunkSize;
-            }
+            this.chunkSize = chunkSize;
             this.source = source;
         }
 

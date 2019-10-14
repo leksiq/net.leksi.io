@@ -23,6 +23,7 @@
  */
 package net.leksi.io;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -78,7 +79,8 @@ public class BOMTest {
             new byte[]{(byte)0x0E, (byte)0xFE, (byte)0xFF, 0},
             new byte[]{(byte)0xFB, (byte)0xEE, (byte)0x28, 0},
             new byte[]{(byte)0x84, (byte)0x31, (byte)0x95, (byte)0x33, 0},
-            new byte[]{(byte)0x1, (byte)0x2, (byte)0x3, (byte)0x4, 0}
+            new byte[]{(byte)0x1, (byte)0x2, (byte)0x3, (byte)0x4, 0},
+            new byte[]{(byte)0x2B, (byte)0x2F, (byte)0x76, (byte)0x37}
         };
         String[] expResults = new String[]{
             "UTF-8", "UTF-16BE", "UTF-16LE", "UTF-32BE", "UTF-32LE",
@@ -87,11 +89,9 @@ public class BOMTest {
         };
         byte[] buf = new byte[32];
         for(int i = 0; i < input.length; i++) {
-            try(BranchInputStream stream = BranchInputStream.create(new ByteArrayInputStream(input[i]));) {
-                String result = BOM.test(stream);
-                assertEquals(1, stream.getBranches().length);
-                BranchInputStream bis = stream.getBranches()[0];
-                int n = bis.read(buf);
+            try(BufferedInputStream stream = new BufferedInputStream(new ByteArrayInputStream(input[i]));) {
+                String result = new BOM().test(stream);
+                int n = stream.read(buf);
                 byte[] b = new byte[n];
                 System.arraycopy(buf, 0, b, 0, n);
                 if(i < expResults.length) {

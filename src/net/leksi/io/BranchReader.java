@@ -200,9 +200,8 @@ abstract public class BranchReader extends Reader {
     static public BranchReader create(final InputStream source, 
             final String encoding, final boolean overwriteBOM,
             final int chunkSize) throws IOException {
-        BranchInputStream stream = BranchInputStream.create(source, chunkSize);
-        String charsetName = BOM.test(stream);
-        InputStream input = stream.getBranches()[0];
+        String charsetName = new BOM().test(source);
+        InputStream input = source;
         if(encoding != null) {
             if(overwriteBOM) {
                 charsetName = encoding;
