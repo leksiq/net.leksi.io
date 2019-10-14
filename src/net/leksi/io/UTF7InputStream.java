@@ -128,6 +128,7 @@ public class UTF7InputStream extends InputStream {
     @Override
     public int read() throws IOException {
         int res = -1; // return value
+        boolean wasMinus = false;
         if(tail == bufferSize) { // more data needed
             if(!cache.isEmpty()) { // read from cahce
                 res = (int)cache.remove(0) & 0xFF;
@@ -219,9 +220,11 @@ public class UTF7InputStream extends InputStream {
                             // omit '-' or cache other
                             cache.add((byte) 0);
                             cache.add((byte) b);
+                        } else {
+                            wasMinus = true;
                         }
-                        inBase64 = false;
-                        break; // leave base64 chunk
+                        inBase64 = false; // leave base64 chunk
+                        break;
                     }
                 }
                 if(res == -1) { // if didn't get not encoded symbol 
@@ -235,6 +238,10 @@ public class UTF7InputStream extends InputStream {
                                 throw new IOException("Invalid code!");
                             }
                         }
+                        int[] bbb = new int[bufferSize];
+                        for(int i = 0; i < bufferSize; i++) {
+                            bbb[i] = (int)buffer[i] & 0xFF;
+                        }
                     }
                 }
             }
@@ -242,6 +249,8 @@ public class UTF7InputStream extends InputStream {
         if(tail < bufferSize) { // if there are data in the buffer
                                 // return it
             res = (int)buffer[tail++] & 0xFF;
+        } else if(wasMinus) {
+            res = read();
         }
         if(res != -1) {
             // check the BOM 0xFF 0xFE and cut it
