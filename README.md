@@ -79,7 +79,10 @@ skipped (except the case UTF-7, when the BOM should be decoded first)
     try(FileInputStream stream = new FileInputStream.create(path);) {
         String charsetName = BOM.test(stream);
         try(InputStreamReader isr = charsetName != null ? 
-                new InputStreamReader(stream, charsetName) :
+                ("UTF-7".equals(charsetName) ? 
+                    new InputStreamReader(new UTF7InputStream(stream), "UTF-16BE") : 
+                    new InputStreamReader(stream, charsetName)
+                    ) :
                 new InputStreamReader(stream);
                 ) {
         ...
